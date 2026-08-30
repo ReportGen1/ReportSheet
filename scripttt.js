@@ -2,7 +2,20 @@
    STUDENT REPORT GENERATOR
    COMPLETE CLEANED script.js
    ========================================================= */
+/* =========================================================
+   WEBSITE IDENTIFICATION
+   ========================================================= */
 
+const WEBSITE_ID = "reportgen1";
+
+const WEBSITE_NAME = "ReportSheet";
+
+const WEBSITE_URL =
+    "https://reportgen1.github.io/ReportSheet/";
+/* =========================================================
+   STUDENT REPORT GENERATOR
+   COMPLETE CLEANED script.js
+   ========================================================= */
 
 /* =========================================================
    SUPABASE
@@ -850,7 +863,7 @@ function attachAuthenticationEvents() {
                                 options: {
 
                                     emailRedirectTo:
-                                        "https://ibsongee75.github.io/Student-report-system-ibsongee75/"
+                                        WEBSITE_URL
 
                                 }
 
@@ -1170,7 +1183,7 @@ async function forgotPassword() {
                     {
 
                         redirectTo:
-                            "https://ibsongee75.github.io/Student-report-system-ibsongee75/"
+                            WEBSITE_URL
 
                     }
                 );
@@ -6501,6 +6514,11 @@ async function startPaystackPayment(
                 currency:
                     "NGN",
 
+
+                /* =================================================
+                   PAYSTACK METADATA
+                   ================================================= */
+
                 metadata: {
 
                     user_id:
@@ -6510,10 +6528,17 @@ async function startPaystackPayment(
                         plan,
 
                     duration:
-                        duration
+                        duration,
+
+                    website_id:
+                        WEBSITE_ID
 
                 },
 
+
+                /* =================================================
+                   PAYMENT CALLBACK
+                   ================================================= */
 
                 callback:
                     async function (
@@ -6533,6 +6558,10 @@ async function startPaystackPayment(
                     },
 
 
+                /* =================================================
+                   CLOSE
+                   ================================================= */
+
                 onClose:
                     function () {
 
@@ -6551,6 +6580,7 @@ async function startPaystackPayment(
     } catch (error) {
 
         console.error(
+            "Paystack start error:",
             error
         );
 
@@ -6565,7 +6595,7 @@ async function startPaystackPayment(
 
 
 /* =========================================================
-   VERIFY PAYSTACK
+   VERIFY PAYSTACK PAYMENT
    ========================================================= */
 
 async function verifyPaystackPayment(
@@ -6582,7 +6612,7 @@ async function verifyPaystackPayment(
             await supabaseClient
                 .functions
                 .invoke(
-                    "verify-paystack-payment-new-one",
+                    "verify-paystack-payment-websites",
                     {
 
                         body: {
@@ -6591,7 +6621,10 @@ async function verifyPaystackPayment(
                                 reference,
 
                             plan:
-                                plan
+                                plan,
+
+                            website_id:
+                                WEBSITE_ID
 
                         }
 
@@ -6602,6 +6635,7 @@ async function verifyPaystackPayment(
         if (error) {
 
             console.error(
+                "Payment verification error:",
                 error
             );
 
@@ -6627,7 +6661,7 @@ async function verifyPaystackPayment(
 
                 plan.toUpperCase() +
 
-                " subscription is now active."
+                " subscription for ReportSheet is now active."
 
             );
 
@@ -6637,8 +6671,21 @@ async function verifyPaystackPayment(
 
         } else {
 
+            console.error(
+                "Payment verification response:",
+                data
+            );
+
+
             alert(
-                "Payment could not be verified."
+
+                data &&
+                data.error
+
+                    ? data.error
+
+                    : "Payment could not be verified."
+
             );
 
         }
@@ -6647,6 +6694,7 @@ async function verifyPaystackPayment(
     } catch (error) {
 
         console.error(
+            "Payment verification exception:",
             error
         );
 
@@ -6680,6 +6728,9 @@ function setFileStatus(
     }
 
 }
+
+
+
 
 
 /* =========================================================
