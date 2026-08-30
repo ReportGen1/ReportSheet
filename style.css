@@ -1,0 +1,825 @@
+/* =========================================================
+   GENERAL PAGE
+   ========================================================= */
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    background: #f2f4f7;
+    color: #222;
+}
+
+
+/* =========================================================
+   HEADER
+   ========================================================= */
+
+header {
+    background: linear-gradient(135deg, #21391e, #315c38);
+    color: white;
+    text-align: center;
+    padding: 25px 15px;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 27px;
+    font-weight: 800;
+}
+
+header p {
+    margin-top: 10px;
+    font-size: 16px;
+}
+
+
+/* =========================================================
+   MAIN
+   ========================================================= */
+
+main {
+    width: 95%;
+    max-width: 1000px;
+    margin: 20px auto;
+}
+
+
+/* =========================================================
+   CARDS
+   ========================================================= */
+
+.card {
+    background: white;
+    padding: 22px;
+    margin-bottom: 20px;
+    border-radius: 10px;
+    border-left: 5px solid #3f308f;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.10);
+}
+
+.card h2 {
+    margin-top: 0;
+    color: #21391e;
+    font-size: 21px;
+}
+
+
+/* =========================================================
+   BUTTONS
+   ========================================================= */
+
+button {
+    background: linear-gradient(135deg, #3f308f, #5946b8);
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    margin: 8px 8px 8px 0;
+    border-radius: 15px;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: bold;
+}
+
+button:hover {
+    opacity: 0.88;
+    transform: translateY(-1px);
+}
+
+
+/* =========================================================
+   INPUTS
+   ========================================================= */
+
+input[type="file"] {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #bbb;
+    border-radius: 6px;
+    background: #fafafa;
+}
+
+select {
+    padding: 11px;
+    min-width: 250px;
+    border: 1px solid #aaa;
+    border-radius: 6px;
+    margin: 8px;
+    font-size: 15px;
+}
+
+#fileStatus {
+    font-weight: bold;
+}
+
+
+/* =========================================================
+   SUBSCRIPTION
+   ========================================================= */
+
+.subscription-section {
+    max-width: 1100px;
+    margin: 30px auto;
+    padding: 20px;
+    text-align: center;
+}
+
+.subscription-section h2 {
+    margin-bottom: 8px;
+    color: #21391e;
+}
+
+.subscription-intro {
+    margin-bottom: 25px;
+}
+
+.plans-container {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    align-items: stretch;
+    flex-wrap: wrap;
+}
+
+.plan-card {
+    width: 280px;
+    padding: 25px;
+    border-radius: 12px;
+    background: white;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.12);
+    position: relative;
+    text-align: left;
+    border-top: 5px solid #3f308f;
+}
+
+.plan-card h3 {
+    text-align: center;
+    font-size: 24px;
+    color: #21391e;
+}
+
+.plan-price {
+    text-align: center;
+    font-size: 30px;
+    font-weight: bold;
+    margin: 15px 0;
+    color: #3f308f;
+}
+
+.plan-price span {
+    display: block;
+    font-size: 14px;
+    font-weight: normal;
+    color: #555;
+}
+
+.plan-card p {
+    text-align: center;
+}
+
+.plan-card li {
+    margin: 10px 0;
+}
+
+.subscribe-button {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.popular-plan {
+    border: 3px solid #2563eb;
+}
+
+.popular-label {
+    text-align: center;
+    font-size: 12px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+
+/* =========================================================
+   REPORT CONTAINER
+   ========================================================= */
+
+#reportContainer {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+
+/* =========================================================
+   REPORT SHEET
+   ========================================================= */
+
+.report {
+    width: 100%;
+    max-width: 210mm;
+    min-height: 277mm;
+
+    margin: 25px auto;
+    padding: 10mm;
+
+    background: white;
+
+    border: 1px solid #ccc;
+
+    box-shadow:
+        0 3px 15px rgba(0, 0, 0, 0.12);
+
+    color: #222;
+
+    font-family: Arial, sans-serif;
+
+    overflow: visible;
+}
+
+
+/* =========================================================
+   SCHOOL HEADER
+   ========================================================= */
+
+.school-header {
+    text-align: center;
+
+    border-bottom:
+        3px solid #315c38;
+
+    padding-bottom: 12px;
+
+    margin-bottom: 15px;
+}
+
+.school-header h1 {
+    margin: 0;
+
+    font-size: 26px;
+
+    font-weight: 800;
+
+    color: #21391e;
+}
+
+.school-header h2 {
+    margin: 8px 0;
+
+    font-size: 20px;
+
+    color: #3f308f;
+
+    font-weight: 800;
+}
+
+.school-header p {
+    margin: 4px 0;
+
+    font-size: 15px;
+}
+
+
+/* =========================================================
+   STUDENT INFORMATION
+   ========================================================= */
+
+.student-info {
+    display: grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap: 7px;
+
+    margin-bottom: 16px;
+}
+
+.student-info div {
+    padding: 8px 10px;
+
+    border:
+        1px solid #c8d4cc;
+
+    border-radius: 5px;
+
+    background: #f4f8f5;
+
+    font-size: 15px;
+
+    font-weight: bold;
+}
+
+.student-info div strong {
+    color: #21391e;
+}
+
+
+/* =========================================================
+   RESULT TABLE
+   ========================================================= */
+
+.result-table {
+    width: 100%;
+
+    border-collapse:
+        collapse;
+
+    margin-top: 12px;
+}
+
+.result-table th,
+.result-table td {
+    border:
+        1px solid #333;
+
+    padding: 8px;
+
+    text-align: center;
+
+    font-size: 14px;
+}
+
+.result-table th {
+    background: #315c38;
+
+    color: white;
+
+    font-weight: bold;
+}
+
+.result-table tr:nth-child(even) {
+    background: #f5f8f5;
+}
+
+.subject-name {
+    text-align: left !important;
+
+    font-weight: bold;
+}
+
+
+/* =========================================================
+   SUMMARY
+   ========================================================= */
+
+.summary {
+    margin-top: 12px;
+
+    border:
+        1px solid #9daaa0;
+
+    border-left:
+        5px solid #3f308f;
+
+    border-radius: 6px;
+
+    padding: 10px;
+
+    background: #f7f7fb;
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(4, 1fr);
+
+    gap: 8px;
+}
+
+.summary p {
+    margin: 0;
+
+    padding: 6px;
+
+    text-align: center;
+
+    font-weight: bold;
+
+    font-size: 14px;
+}
+
+.summary strong {
+    display: block;
+
+    color: #3f308f;
+
+    margin-bottom: 3px;
+}
+
+.position-value {
+    display: block;
+
+    font-size: 18px;
+
+    font-weight: 800;
+
+    color: #30246f;
+}
+
+
+/* =========================================================
+   BEHAVIORAL SECTION
+   ========================================================= */
+
+.behavior-section {
+    margin-top: 15px;
+
+    width: 100%;
+}
+
+.behavior-section h3 {
+    margin: 0 0 5px 0;
+
+    padding: 7px 9px;
+
+    background: #e8edf5;
+
+    color: #21391e;
+
+    border-left:
+        4px solid #3f308f;
+
+    font-size: 15px;
+}
+
+.behavior-section > p {
+    margin: 4px 0 6px 0;
+
+    font-size: 11px;
+
+    color: #555;
+}
+
+
+/* =========================================================
+   BEHAVIOR TABLE
+   ========================================================= */
+
+.behavior-table {
+    width: 100%;
+
+    border-collapse:
+        collapse;
+
+    table-layout:
+        fixed;
+}
+
+.behavior-table th,
+.behavior-table td {
+    border:
+        1px solid #999;
+
+    padding:
+        7px 4px;
+
+    text-align:
+        center;
+
+    vertical-align:
+        middle;
+
+    font-size:
+        11px;
+}
+
+.behavior-table th {
+    background:
+        #eef3ea;
+
+    color:
+        #21391e;
+
+    font-weight:
+        bold;
+}
+
+.behavior-table td {
+    background:
+        #ffffff;
+}
+
+.behavior-table th:first-child,
+.behavior-table td:first-child {
+    width: 18%;
+
+    font-weight:
+        bold;
+}
+
+.behavior-table th:nth-child(2),
+.behavior-table td:nth-child(2),
+.behavior-table th:nth-child(3),
+.behavior-table td:nth-child(3),
+.behavior-table th:nth-child(4),
+.behavior-table td:nth-child(4),
+.behavior-table th:nth-child(5),
+.behavior-table td:nth-child(5),
+.behavior-table th:nth-child(6),
+.behavior-table td:nth-child(6) {
+    width: 16.4%;
+}
+
+.behavior-table .trait-title {
+    font-weight:
+        bold;
+
+    text-align:
+        center;
+}
+
+.behavior-table .trait-rating {
+    font-size:
+        14px;
+
+    font-weight:
+        bold;
+
+    color:
+        #3f308f;
+}
+
+
+/* =========================================================
+   COMMENTS
+   ========================================================= */
+
+.comments {
+    margin-top: 15px;
+}
+
+.comments p {
+    margin:
+        7px 0 3px 0;
+
+    font-size:
+        13px;
+}
+
+.comment-box {
+    border:
+        1px solid #aaa;
+
+    border-radius:
+        4px;
+
+    min-height:
+        35px;
+
+    padding:
+        6px 8px;
+
+    background:
+        #fafafa;
+
+    font-size:
+        12px;
+}
+
+
+/* =========================================================
+   PRINT
+   ========================================================= */
+
+@media print {
+
+    @page {
+        size: A4 portrait;
+        margin: 8mm;
+    }
+
+    html,
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        background: white !important;
+        overflow: visible !important;
+    }
+
+    /* -----------------------------------------------------
+       HIDE WEBSITE INTERFACE
+       ----------------------------------------------------- */
+
+    header,
+    footer,
+    button,
+    input,
+    select,
+    .card,
+    #authSection,
+    #subscriptionPlans,
+    #subscriptionStatus,
+    #subscriptionSection,
+    #step3,
+    .step3,
+    .generate-section,
+    .controls {
+        display: none !important;
+    }
+
+    /* -----------------------------------------------------
+       SHOW ONLY THE REPORT SECTION
+       ----------------------------------------------------- */
+
+    #reportSection {
+    display: none !important;
+}
+
+    #reportContainer {
+        display: block !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: white !important;
+        overflow: visible !important;
+    }
+
+    /* -----------------------------------------------------
+       EACH STUDENT REPORT
+       ----------------------------------------------------- */
+
+    .report {
+        display: block !important;
+
+        width: 100% !important;
+        max-width: none !important;
+
+        min-height: 0 !important;
+        height: auto !important;
+
+        margin: 0 !important;
+        padding: 5mm !important;
+
+        background: white !important;
+
+        border: none !important;
+        box-shadow: none !important;
+
+        overflow: visible !important;
+
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+
+        page-break-after: always !important;
+        break-after: page !important;
+    }
+
+    /* -----------------------------------------------------
+       START EACH NEW STUDENT ON A NEW PAGE
+       ----------------------------------------------------- */
+
+    .report + .report {
+        page-break-before: always !important;
+        break-before: page !important;
+    }
+
+    /* -----------------------------------------------------
+       DO NOT CREATE AN EXTRA BLANK PAGE AFTER LAST REPORT
+       ----------------------------------------------------- */
+
+    .report:last-child {
+        page-break-after: auto !important;
+        break-after: auto !important;
+    }
+
+    /* -----------------------------------------------------
+       HIDE POSSIBLE FOOTER ELEMENTS
+       ----------------------------------------------------- */
+
+    body > footer,
+    footer,
+    .footer,
+    #footer,
+    .site-footer,
+    .page-footer {
+        display: none !important;
+    }
+
+    /* -----------------------------------------------------
+       KEEP REPORT CONTENT TOGETHER
+       ----------------------------------------------------- */
+
+    .school-header,
+    .student-info,
+    .result-table,
+    .summary,
+    .behavior-section,
+    .behavior-table,
+    .comments {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+    }
+
+    /* -----------------------------------------------------
+       TABLES
+       ----------------------------------------------------- */
+
+    table {
+        border-collapse: collapse !important;
+    }
+
+    .result-table tr,
+    .behavior-table tr {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+    }
+
+    /* -----------------------------------------------------
+       PRESERVE REPORT COLOURS
+       ----------------------------------------------------- */
+
+    .report,
+    .report * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+}
+
+/* =========================================================
+   MOBILE SCREEN
+   ========================================================= */
+
+@media screen and (max-width: 600px) {
+
+    header h1 {
+        font-size: 21px;
+    }
+
+    main {
+        width: 96%;
+    }
+
+    .student-info {
+        grid-template-columns:
+            1fr;
+    }
+
+    select {
+        width: 100%;
+
+        margin:
+            8px 0;
+    }
+
+    button {
+        width: 100%;
+
+        margin:
+            5px 0;
+    }
+
+    .report {
+        padding: 15px;
+
+        margin:
+            15px auto;
+    }
+
+    .result-table {
+        font-size: 12px;
+    }
+
+    .result-table th,
+    .result-table td {
+        padding: 5px;
+
+        font-size: 12px;
+    }
+
+    .summary {
+        grid-template-columns:
+            1fr 1fr;
+    }
+
+    .behavior-table {
+        table-layout:
+            fixed;
+    }
+
+    .behavior-table th,
+    .behavior-table td {
+        padding:
+            5px 2px;
+
+        font-size:
+            10px;
+
+        word-break:
+            normal;
+    }
+
+    .behavior-table th:first-child,
+    .behavior-table td:first-child {
+        width:
+            18%;
+    }
+}
