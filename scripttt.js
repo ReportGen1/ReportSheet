@@ -6720,7 +6720,7 @@ async function verifyPaystackPayment(
             );
 
 
-            await checkLogin();
+            window.location.reload();
 
 
         } else {
