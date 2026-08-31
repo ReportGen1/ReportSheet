@@ -43,8 +43,8 @@ const PAYSTACK_PUBLIC_KEY =
 
 
 /* =========================================================
-   GLOBAL VARIABLES
-   ========================================================= */
+    GLOBAL VARIABLES
+    ========================================================= */
 
 let students = [];
 
@@ -53,6 +53,8 @@ let currentSubscriptionPlan = "";
 let reportsGenerated = 0;
 
 let currentUserId = null;
+
+let currentSubscription = null;
 
 
 /* =========================================================
@@ -749,6 +751,7 @@ function showApp() {
 
     }
 
+
     if (
         elementExists(
             subscriptionPlans
@@ -759,6 +762,7 @@ function showApp() {
             "none";
 
     }
+
 
     if (
         elementExists(
@@ -771,6 +775,7 @@ function showApp() {
 
     }
 
+
     if (
         elementExists(
             subscriptionStatus
@@ -782,9 +787,154 @@ function showApp() {
 
     }
 
+
+    /* =================================================
+       CREATE RENEW / UPGRADE BUTTON
+    ================================================= */
+
+    let renewButton =
+        document.getElementById(
+            "renewUpgradeButton"
+        );
+
+
+    if (!renewButton) {
+
+        renewButton =
+            document.createElement(
+                "button"
+            );
+
+
+        renewButton.id =
+            "renewUpgradeButton";
+
+
+        renewButton.type =
+            "button";
+
+
+        renewButton.innerHTML =
+            "🔄 RENEW / UPGRADE SUBSCRIPTION";
+
+
+        /* =================================================
+           BUTTON STYLE
+        ================================================= */
+
+        renewButton.style.display =
+            "block";
+
+        renewButton.style.width =
+            "100%";
+
+        renewButton.style.margin =
+            "20px 0";
+
+        renewButton.style.padding =
+            "18px";
+
+        renewButton.style.border =
+            "2px solid #ffffff";
+
+        renewButton.style.borderRadius =
+            "10px";
+
+        renewButton.style.fontSize =
+            "18px";
+
+        renewButton.style.fontWeight =
+            "bold";
+
+        renewButton.style.cursor =
+            "pointer";
+
+        renewButton.style.boxShadow =
+            "0 5px 15px rgba(0,0,0,0.25)";
+
+        renewButton.style.backgroundColor =
+            "#198754";
+
+        renewButton.style.color =
+            "#ffffff";
+
+
+        /* =================================================
+           BUTTON ACTION
+        ================================================= */
+
+        renewButton.addEventListener(
+            "click",
+            function () {
+
+                if (
+                    elementExists(
+                        appSection
+                    )
+                ) {
+
+                    appSection.style.display =
+                        "none";
+
+                }
+
+
+                if (
+                    elementExists(
+                        subscriptionPlans
+                    )
+                ) {
+
+                    subscriptionPlans.style.display =
+                        "block";
+
+                }
+
+
+                if (
+                    elementExists(
+                        subscriptionPlans
+                    )
+                ) {
+
+                    subscriptionPlans.scrollIntoView({
+
+                        behavior:
+                            "smooth",
+
+                        block:
+                            "start"
+
+                    });
+
+                }
+
+            }
+        );
+
+    }
+
+
+    /* =================================================
+       PLACE BUTTON ABOVE THE APP
+    ================================================= */
+
+    if (
+        elementExists(
+            appSection
+        ) &&
+        renewButton.parentElement !==
+            appSection
+    ) {
+
+        appSection.insertBefore(
+            renewButton,
+            appSection.firstChild
+        );
+
+    }
+
 }
-
-
 /* =========================================================
    AUTHENTICATION EVENTS
    ========================================================= */
@@ -1530,6 +1680,7 @@ async function checkSubscription(user) {
 
         currentSubscriptionPlan = "";
         reportsGenerated = 0;
+         currentSubscription = null;
 
 
         /* =================================================
@@ -1553,6 +1704,13 @@ async function checkSubscription(user) {
             return;
 
         }
+
+      /* =================================================
+   STORE CURRENT SUBSCRIPTION
+   ================================================= */
+
+currentSubscription =
+    subscription;
 
 
         /* =================================================
@@ -1820,30 +1978,390 @@ supabaseClient.auth.onAuthStateChange(
    ========================================================= */
 
 function displaySubscriptionStatus(
-subscription,
-user
+    subscription,
+    user
 ) {
 
-if (
-    !elementExists(
-        subscriptionStatus
-    )
-) {
+    if (
+        !elementExists(
+            subscriptionStatus
+        )
+    ) {
+
+        return;
+
+    }
+
+
+    subscriptionStatus.style.display =
+        "block";
+
+
+    /* =================================================
+       REMOVE OLD RENEW BUTTON
+    ================================================= */
+
+    const oldRenewButton =
+        document.getElementById(
+            "renewUpgradeButton"
+        );
+
+
+    if (oldRenewButton) {
+
+        oldRenewButton.remove();
+
+    }
+
+
+    /* =================================================
+       NO SUBSCRIPTION
+    ================================================= */
+
+    if (!subscription) {
+
+        subscriptionStatus.innerHTML = `
+
+            <strong>
+                Subscription Status:
+            </strong>
+
+            <span style="color:red;">
+                UNPAID
+            </span>
+
+            <br>
+
+            Account:
+            ${escapeHTML(
+                user?.email || ""
+            )}
+
+            <br><br>
+
+            Please choose a subscription plan
+            to access the Student Report Generator.
+
+        `;
+
+        return;
+
+    }
+
+
+    /* =================================================
+       PLAN
+    ================================================= */
+
+    const plan =
+        String(
+
+            subscription.plan ||
+
+            subscription.subscription_plan ||
+
+            subscription.package ||
+
+            ""
+
+        )
+            .trim()
+            .toLowerCase();
+
+
+    /* =================================================
+       STATUS
+    ================================================= */
+
+    const status =
+        String(
+            subscription.status ||
+            ""
+        )
+            .trim()
+            .toLowerCase();
+
+
+    /* =================================================
+       EXPIRY
+    ================================================= */
+
+    let expiryDate =
+        null;
+
+    let expiryText =
+        "Unknown";
+
+
+    if (
+        subscription.expires_at
+    ) {
+
+        expiryDate =
+            new Date(
+                subscription.expires_at
+            );
+
+
+        if (
+            !isNaN(
+                expiryDate.getTime()
+            )
+        ) {
+
+            expiryText =
+                expiryDate.toLocaleDateString();
+
+        }
+
+    }
+
+
+    /* =================================================
+       ACTIVE STATUS
+    ================================================= */
+
+    const validPaidStatuses = [
+
+        "paid",
+        "active",
+        "success",
+        "successful",
+        "completed"
+
+    ];
+
+
+    const statusIsPaid =
+        validPaidStatuses.includes(
+            status
+        );
+
+
+    const isExpired =
+        !expiryDate ||
+        isNaN(
+            expiryDate.getTime()
+        ) ||
+        expiryDate <= new Date();
+
+
+    const isActive =
+        statusIsPaid &&
+        !isExpired;
+
+
+    /* =================================================
+       REPORT LIMIT
+    ================================================= */
+
+    const limit =
+        REPORT_LIMITS[plan] ||
+        0;
+
+
+    const generated =
+        Number(
+            subscription.reports_generated
+        ) || 0;
+
+
+    /* =================================================
+       CARRY-OVER REPORTS
+    ================================================= */
+
+    const carriedOver =
+        Number(
+            subscription.carried_over_reports
+        ) || 0;
+
+
+    /* =================================================
+       TOTAL AVAILABLE REPORTS
+    ================================================= */
+
+    const totalAvailable =
+        limit +
+        carriedOver;
+
+
+    /* =================================================
+       REPORTS REMAINING
+    ================================================= */
+
+    const remaining =
+        Math.max(
+            totalAvailable -
+            generated,
+            0
+        );
+
+
+    /* =================================================
+       ACTIVE SUBSCRIPTION
+    ================================================= */
+
+    if (isActive) {
+
+        subscriptionStatus.innerHTML = `
+
+            <strong>
+                Subscription Status:
+            </strong>
+
+            <span style="color:green;">
+                PAID / ACTIVE
+            </span>
+
+            <br>
+
+            <strong>
+                Plan:
+            </strong>
+
+            ${escapeHTML(
+                getPlanDisplayNameFromPlan(
+                    plan
+                )
+            )}
+
+            <br>
+
+            <strong>
+                Account:
+            </strong>
+
+            ${escapeHTML(
+                user?.email || ""
+            )}
+
+            <br>
+
+            <strong>
+                Expires:
+            </strong>
+
+            ${escapeHTML(
+                expiryText
+            )}
+
+            ${
+                limit
+                    ? `
+
+                        <br>
+
+                        <strong>
+                            Reports Generated:
+                        </strong>
+
+                        ${generated}
+
+                        /
+
+                        ${totalAvailable}
+
+                        <br>
+
+                        <strong>
+                            New Plan Reports:
+                        </strong>
+
+                        ${limit}
+
+                        <br>
+
+                        <strong>
+                            Carried-over Reports:
+                        </strong>
+
+                        ${carriedOver}
+
+                        <br>
+
+                        <strong>
+                            Reports Remaining:
+                        </strong>
+
+                        ${remaining}
+
+                    `
+                    : ""
+            }
+
+        `;
+
+
+        /* =================================================
+           ADD RENEW / UPGRADE BUTTON
+        ================================================= */
+
+        
+
+
+        return;
+
+    }
+
+
+    /* =================================================
+       EXPIRED
+    ================================================= */
+
+    if (
+        statusIsPaid &&
+        isExpired
+    ) {
+
+        subscriptionStatus.innerHTML = `
+
+            <strong>
+                Subscription Status:
+            </strong>
+
+            <span style="color:red;">
+                EXPIRED
+            </span>
+
+            <br>
+
+            <strong>
+                Plan:
+            </strong>
+
+            ${escapeHTML(
+                getPlanDisplayNameFromPlan(
+                    plan
+                )
+            )}
+
+            <br>
+
+            <strong>
+                Expired:
+            </strong>
+
+            ${escapeHTML(
+                expiryText
+            )}
+
+            <br><br>
+
+            Please renew your subscription
+            to continue using the system.
+
+        `;
+
+    
 
     return;
 
-}
+    }
 
 
-subscriptionStatus.style.display =
-    "block";
-
-
-/* =================================================
-   NO SUBSCRIPTION
-================================================= */
-
-if (!subscription) {
+    /* =================================================
+       UNPAID / INVALID
+    ================================================= */
 
     subscriptionStatus.innerHTML = `
 
@@ -1864,303 +2382,12 @@ if (!subscription) {
 
         <br><br>
 
-        Please choose a subscription plan
-        to access the Student Report Generator.
+        Please choose a subscription plan.
 
     `;
 
-    return;
-
 }
 
-
-/* =================================================
-   PLAN
-================================================= */
-
-const plan =
-    String(
-
-        subscription.plan ||
-
-        subscription.subscription_plan ||
-
-        subscription.package ||
-
-        ""
-
-    )
-        .trim()
-        .toLowerCase();
-
-
-/* =================================================
-   STATUS
-================================================= */
-
-const status =
-    String(
-        subscription.status ||
-        ""
-    )
-        .trim()
-        .toLowerCase();
-
-
-/* =================================================
-   EXPIRY
-================================================= */
-
-let expiryDate = null;
-
-let expiryText =
-    "Unknown";
-
-
-if (
-    subscription.expires_at
-) {
-
-    expiryDate =
-        new Date(
-            subscription.expires_at
-        );
-
-
-    if (
-        !isNaN(
-            expiryDate.getTime()
-        )
-    ) {
-
-        expiryText =
-            expiryDate.toLocaleDateString();
-
-    }
-
-}
-
-
-/* =================================================
-   ACTIVE?
-================================================= */
-
-const validPaidStatuses = [
-
-    "paid",
-    "active",
-    "success",
-    "successful",
-    "completed"
-
-];
-
-
-const statusIsPaid =
-    validPaidStatuses.includes(
-        status
-    );
-
-
-const isExpired =
-    !expiryDate ||
-    isNaN(
-        expiryDate.getTime()
-    ) ||
-    expiryDate <= new Date();
-
-
-const isActive =
-    statusIsPaid &&
-    !isExpired;
-
-
-/* =================================================
-   REPORT LIMIT
-================================================= */
-
-const limit =
-    REPORT_LIMITS[plan] ||
-    0;
-
-
-const generated =
-    Number(
-        subscription.reports_generated
-    ) || 0;
-
-
-const remaining =
-    limit
-        ? Math.max(
-            limit - generated,
-            0
-        )
-        : 0;
-
-
-/* =================================================
-   ACTIVE SUBSCRIPTION
-================================================= */
-
-if (isActive) {
-
-    subscriptionStatus.innerHTML = `
-
-        <strong>
-            Subscription Status:
-        </strong>
-
-        <span style="color:green;">
-            PAID / ACTIVE
-        </span>
-
-        <br>
-
-        <strong>
-            Plan:
-        </strong>
-
-        ${escapeHTML(
-            getPlanDisplayNameFromPlan(
-                plan
-            )
-        )}
-
-        <br>
-
-        <strong>
-            Account:
-        </strong>
-
-        ${escapeHTML(
-            user?.email || ""
-        )}
-
-        <br>
-
-        <strong>
-            Expires:
-        </strong>
-
-        ${escapeHTML(
-            expiryText
-        )}
-
-        ${
-            limit
-                ? `
-
-                    <br>
-
-                    <strong>
-                        Reports Generated:
-                    </strong>
-
-                    ${generated}
-                    /
-                    ${limit}
-
-                    <br>
-
-                    <strong>
-                        Reports Remaining:
-                    </strong>
-
-                    ${remaining}
-
-                `
-                : ""
-        }
-
-    `;
-
-    return;
-
-}
-
-
-/* =================================================
-   EXPIRED
-================================================= */
-
-if (
-    statusIsPaid &&
-    isExpired
-) {
-
-    subscriptionStatus.innerHTML = `
-
-        <strong>
-            Subscription Status:
-        </strong>
-
-        <span style="color:red;">
-            EXPIRED
-        </span>
-
-        <br>
-
-        <strong>
-            Plan:
-        </strong>
-
-        ${escapeHTML(
-            getPlanDisplayNameFromPlan(
-                plan
-            )
-        )}
-
-        <br>
-
-        <strong>
-            Expired:
-        </strong>
-
-        ${escapeHTML(
-            expiryText
-        )}
-
-        <br><br>
-
-        Please renew your subscription
-        to continue using the system.
-
-    `;
-
-    return;
-
-}
-
-
-/* =================================================
-   UNPAID / INVALID
-================================================= */
-
-subscriptionStatus.innerHTML = `
-
-    <strong>
-        Subscription Status:
-    </strong>
-
-    <span style="color:red;">
-        UNPAID
-    </span>
-
-    <br>
-
-    Account:
-    ${escapeHTML(
-        user?.email || ""
-    )}
-
-    <br><br>
-
-    Please choose a subscription plan.
-
-`;
-
-}
 
 
 /* =========================================================
@@ -4482,8 +4709,8 @@ function getPlanDisplayName() {
 
 
 /* =========================================================
-   UPDATE REPORT STATUS
-   ========================================================= */
+    UPDATE REPORT STATUS
+    ========================================================= */
 
 function updateReportStatus() {
 
@@ -4554,13 +4781,43 @@ function updateReportStatus() {
     }
 
 
+    /* =====================================================
+       CARRIED-OVER REPORTS
+       ===================================================== */
+
+    const carriedOverReports =
+        Math.max(
+            Number(
+                currentSubscription?.carried_over_reports
+            ) || 0,
+            0
+        );
+
+
+    /* =====================================================
+       TOTAL AVAILABLE REPORTS
+       ===================================================== */
+
+    const totalAvailable =
+        limit +
+        carriedOverReports;
+
+
+    /* =====================================================
+       REMAINING REPORTS
+       ===================================================== */
+
     const remaining =
         Math.max(
-            limit -
+            totalAvailable -
             reportsGenerated,
             0
         );
 
+
+    /* =====================================================
+       DISPLAY
+       ===================================================== */
 
     statusElement.innerHTML =
 
@@ -4571,8 +4828,15 @@ function updateReportStatus() {
 
         "📄 Reports generated: " +
         reportsGenerated +
+
         " / " +
-        limit +
+
+        totalAvailable +
+
+        "<br>" +
+
+        "🎁 Carried-over reports: " +
+        carriedOverReports +
 
         "<br>" +
 
@@ -4580,9 +4844,13 @@ function updateReportStatus() {
         remaining;
 
 
+    /* =====================================================
+       LIMIT REACHED
+       ===================================================== */
+
     if (
         reportsGenerated >=
-        limit
+        totalAvailable
     ) {
 
         statusElement.innerHTML +=
@@ -4591,7 +4859,7 @@ function updateReportStatus() {
 
             "⚠️ Report generation limit reached. " +
 
-            "Please upgrade your subscription to generate more reports.";
+            "Please renew or upgrade your subscription to generate more reports.";
 
     }
 
@@ -4621,10 +4889,43 @@ function canGenerateReports(
     }
 
 
-    const remaining =
-        limit -
-        reportsGenerated;
+    /* =====================================================
+       CARRIED-OVER REPORTS
+       ===================================================== */
 
+    const carriedOverReports =
+        Math.max(
+            Number(
+                currentSubscription?.carried_over_reports
+            ) || 0,
+            0
+        );
+
+
+    /* =====================================================
+       TOTAL AVAILABLE
+       ===================================================== */
+
+    const totalAvailable =
+        limit +
+        carriedOverReports;
+
+
+    /* =====================================================
+       REMAINING
+       ===================================================== */
+
+    const remaining =
+        Math.max(
+            totalAvailable -
+            reportsGenerated,
+            0
+        );
+
+
+    /* =====================================================
+       CHECK ZERO
+       ===================================================== */
 
     if (
         remaining <=
@@ -4642,10 +4943,10 @@ function canGenerateReports(
             "Reports generated: " +
             reportsGenerated +
             " / " +
-            limit +
+            totalAvailable +
             "\n\n" +
 
-            "Please upgrade your subscription to generate more reports."
+            "Please renew or upgrade your subscription to generate more reports."
 
         );
 
@@ -4657,6 +4958,10 @@ function canGenerateReports(
 
     }
 
+
+    /* =====================================================
+       CHECK REQUESTED AMOUNT
+       ===================================================== */
 
     if (
         numberOfReports >
@@ -4674,7 +4979,7 @@ function canGenerateReports(
             "Reports generated: " +
             reportsGenerated +
             " / " +
-            limit +
+            totalAvailable +
             "\n" +
 
             "Reports remaining: " +
@@ -4701,8 +5006,6 @@ function canGenerateReports(
     return true;
 
 }
-
-
 /* =========================================================
    INCREMENT REPORT COUNT SECURELY
    ========================================================= */
@@ -4755,15 +5058,17 @@ async function incrementReportCount(
         } =
             await supabaseClient
                 .rpc(
-                    "increment_reports_generated",
-                    {
+    "increment_reports_generated_for_website",
+    {
 
-                        report_count:
-                            reportAmount
+        p_website_id:
+            WEBSITE_ID,
 
-                    }
-                );
+        p_amount:
+            reportAmount
 
+    }
+);
 
         if (error) {
 
@@ -6666,7 +6971,7 @@ async function verifyPaystackPayment(
             await supabaseClient
                 .functions
                 .invoke(
-                    "verify-paystack-payment-websites",
+                    "paystack-verification",
                     {
 
                         body: {
@@ -6720,7 +7025,7 @@ async function verifyPaystackPayment(
             );
 
 
-            window.location.reload();
+            await checkLogin();
 
 
         } else {
