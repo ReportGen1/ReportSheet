@@ -1471,212 +1471,257 @@ async function checkLogin() {
 
 async function checkSubscription(user) {
 
-try {
+    try {
 
-    const {
-        data: subscription,
-        error
-    } =
-        await supabaseClient
-            .from("subscriptions")
-            .select("*")
-            .eq("user_id", user.id)
-            .maybeSingle();
-
-
-    /* =================================================
-       DATABASE ERROR
-    ================================================= */
-
-    if (error) {
-
-        console.error(
-            "Subscription database error:",
-            error
+        console.log(
+            "Checking subscription:",
+            {
+                user_id: user.id,
+                website_id: WEBSITE_ID
+            }
         );
+
+
+        const {
+            data: subscription,
+            error
+        } =
+            await supabaseClient
+                .from("subscriptions")
+                .select("*")
+                .eq("user_id", user.id)
+                .eq("website_id", WEBSITE_ID)
+                .order("created_at", {
+                    ascending: false
+                })
+                .limit(1)
+                .maybeSingle();
+
+
+        /* =================================================
+           DATABASE ERROR
+        ================================================= */
+
+        if (error) {
+
+            console.error(
+                "Subscription database error:",
+                error
+            );
+
+            currentSubscriptionPlan = "";
+            reportsGenerated = 0;
+
+            displaySubscriptionStatus(
+                null,
+                user
+            );
+
+            showSubscription();
+
+            return;
+
+        }
+
+
+        /* =================================================
+           RESET VALUES
+        ================================================= */
 
         currentSubscriptionPlan = "";
         reportsGenerated = 0;
 
-        displaySubscriptionStatus(
-            null,
-            user
-        );
 
-        showSubscription();
+        /* =================================================
+           NO SUBSCRIPTION FOR THIS WEBSITE
+        ================================================= */
 
-        return;
+        if (!subscription) {
 
-    }
-
-
-    /* =================================================
-       RESET VALUES
-    ================================================= */
-
-    currentSubscriptionPlan = "";
-    reportsGenerated = 0;
-
-
-    /* =================================================
-       NO SUBSCRIPTION RECORD
-    ================================================= */
-
-    if (!subscription) {
-
-        displaySubscriptionStatus(
-            null,
-            user
-        );
-
-        showSubscription();
-
-        return;
-
-    }
-
-
-    /* =================================================
-       READ PLAN
-    ================================================= */
-
-    currentSubscriptionPlan =
-        String(
-
-            subscription.plan ||
-
-            subscription.subscription_plan ||
-
-            subscription.package ||
-
-            ""
-
-        )
-            .trim()
-            .toLowerCase();
-
-
-    /* =================================================
-       READ REPORT COUNT
-    ================================================= */
-
-    reportsGenerated =
-        Number(
-            subscription.reports_generated
-        ) || 0;
-
-
-    /* =================================================
-       READ STATUS
-    ================================================= */
-
-    const subscriptionStatusValue =
-        String(
-            subscription.status ||
-            ""
-        )
-            .trim()
-            .toLowerCase();
-
-
-    /* =================================================
-       CHECK EXPIRATION
-    ================================================= */
-
-    let subscriptionIsActive = false;
-
-
-    if (
-        subscription.expires_at
-    ) {
-
-        const expiryDate =
-            new Date(
-                subscription.expires_at
+            console.log(
+                "No subscription found for website:",
+                WEBSITE_ID
             );
 
+            displaySubscriptionStatus(
+                null,
+                user
+            );
 
-        const now =
-            new Date();
+            showSubscription();
 
-
-        if (
-            !isNaN(
-                expiryDate.getTime()
-            ) &&
-            expiryDate > now
-        ) {
-
-            subscriptionIsActive = true;
+            return;
 
         }
 
-    }
+
+        /* =================================================
+           READ PLAN
+        ================================================= */
+
+        currentSubscriptionPlan =
+            String(
+
+                subscription.plan ||
+
+                subscription.subscription_plan ||
+
+                subscription.package ||
+
+                ""
+
+            )
+                .trim()
+                .toLowerCase();
 
 
-    /* =================================================
-       ACCEPT VALID PAID STATUS VALUES
-    ================================================= */
+        /* =================================================
+           READ REPORT COUNT
+        ================================================= */
 
-    const validPaidStatuses = [
-
-        "paid",
-        "active",
-        "success",
-        "successful",
-        "completed"
-
-    ];
+        reportsGenerated =
+            Number(
+                subscription.reports_generated
+            ) || 0;
 
 
-    const paymentStatusIsValid =
-        validPaidStatuses.includes(
-            subscriptionStatusValue
+        /* =================================================
+           READ STATUS
+        ================================================= */
+
+        const subscriptionStatusValue =
+            String(
+                subscription.status ||
+                ""
+            )
+                .trim()
+                .toLowerCase();
+
+
+        /* =================================================
+           CHECK EXPIRATION
+        ================================================= */
+
+        let subscriptionIsActive = false;
+
+
+        if (
+            subscription.expires_at
+        ) {
+
+            const expiryDate =
+                new Date(
+                    subscription.expires_at
+                );
+
+
+            const now =
+                new Date();
+
+
+            if (
+
+                !isNaN(
+                    expiryDate.getTime()
+                ) &&
+
+                expiryDate > now
+
+            ) {
+
+                subscriptionIsActive = true;
+
+            }
+
+        }
+
+
+        /* =================================================
+           ACCEPT VALID PAID STATUS VALUES
+        ================================================= */
+
+        const validPaidStatuses = [
+
+            "paid",
+            "active",
+            "success",
+            "successful",
+            "completed"
+
+        ];
+
+
+        const paymentStatusIsValid =
+            validPaidStatuses.includes(
+                subscriptionStatusValue
+            );
+
+
+        /* =================================================
+           DISPLAY STATUS
+        ================================================= */
+
+        displaySubscriptionStatus(
+            subscription,
+            user
         );
 
 
-    /* =================================================
-       DISPLAY STATUS
-    ================================================= */
+        /* =================================================
+           FINAL ACCESS CHECK
+        ================================================= */
 
-    displaySubscriptionStatus(
-        subscription,
-        user
-    );
+        if (
+
+            paymentStatusIsValid &&
+
+            subscriptionIsActive &&
+
+            currentSubscriptionPlan &&
+
+            REPORT_LIMITS[
+                currentSubscriptionPlan
+            ]
+
+        ) {
+
+            console.log(
+                "ACTIVE SUBSCRIPTION:",
+                {
+                    website_id:
+                        WEBSITE_ID,
+
+                    plan:
+                        currentSubscriptionPlan,
+
+                    status:
+                        subscriptionStatusValue,
+
+                    expires_at:
+                        subscription.expires_at
+                }
+            );
 
 
-    /* =================================================
-       FINAL ACCESS CHECK
-    ================================================= */
+            showApp();
 
-    if (
+            updateReportStatus();
 
-        paymentStatusIsValid &&
+            return;
 
-        subscriptionIsActive &&
+        }
 
-        currentSubscriptionPlan &&
 
-        REPORT_LIMITS[
-            currentSubscriptionPlan
-        ]
-
-    ) {
+        /* =================================================
+           SUBSCRIPTION NOT ACTIVE
+        ================================================= */
 
         console.log(
-            "Active subscription:",
-            currentSubscriptionPlan
-        );
-
-        showApp();
-
-        updateReportStatus();
-
-    } else {
-
-        console.log(
-            "Subscription is not active.",
+            "Subscription is not active:",
             {
+                website_id:
+                    WEBSITE_ID,
+
                 status:
                     subscriptionStatusValue,
 
@@ -1684,31 +1729,40 @@ try {
                     currentSubscriptionPlan,
 
                 expires_at:
-                    subscription.expires_at
+                    subscription.expires_at,
+
+                paymentStatusIsValid:
+                    paymentStatusIsValid,
+
+                subscriptionIsActive:
+                    subscriptionIsActive,
+
+                planExists:
+                    !!REPORT_LIMITS[
+                        currentSubscriptionPlan
+                    ]
             }
         );
+
+
+        showSubscription();
+
+
+    } catch (error) {
+
+        console.error(
+            "Subscription check failed:",
+            error
+        );
+
+        currentSubscriptionPlan = "";
+        reportsGenerated = 0;
 
         showSubscription();
 
     }
 
-
-} catch (error) {
-
-    console.error(
-        "Subscription check failed:",
-        error
-    );
-
-    currentSubscriptionPlan = "";
-    reportsGenerated = 0;
-
-    showSubscription();
-
 }
-
-}
-
 
 /* =========================================================
    AUTH STATE
