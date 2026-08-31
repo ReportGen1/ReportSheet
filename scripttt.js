@@ -415,6 +415,9 @@ let reportSettings = {
     schoolAddress:
         "YOUR SCHOOL ADDRESS",
 
+    schoolLogo:
+        "",
+
     firstCAMaximum:
         20,
 
@@ -488,6 +491,20 @@ let generateAllButton;
 
 let reportContainer;
 
+let schoolNameInput;
+
+let schoolAddressInput;
+
+let schoolLogoInput;
+
+let schoolLogoPreview;
+
+let removeSchoolLogoButton;
+
+let saveSchoolInformationButton;
+
+let schoolInformationStatus;
+
 
 /* =========================================================
    INITIALIZE
@@ -506,6 +523,8 @@ document.addEventListener(
         createSubjectManager();
 
         restoreAppData();
+
+        loadSchoolInformation();
 
         restoreGeneratedReports();
 
@@ -609,6 +628,48 @@ function initializeElements() {
     reportContainer =
         document.getElementById(
             "reportContainer"
+        );
+
+
+    schoolNameInput =
+        document.getElementById(
+            "schoolNameInput"
+        );
+
+
+    schoolAddressInput =
+        document.getElementById(
+            "schoolAddressInput"
+        );
+
+
+    schoolLogoInput =
+        document.getElementById(
+            "schoolLogoInput"
+        );
+
+
+    schoolLogoPreview =
+        document.getElementById(
+            "schoolLogoPreview"
+        );
+
+
+    removeSchoolLogoButton =
+        document.getElementById(
+            "removeSchoolLogo"
+        );
+
+
+    saveSchoolInformationButton =
+        document.getElementById(
+            "saveSchoolInformation"
+        );
+
+
+    schoolInformationStatus =
+        document.getElementById(
+            "schoolInformationStatus"
         );
 
 }
@@ -2442,6 +2503,328 @@ function getPlanDisplayNameFromPlan(
 
 
 /* =========================================================
+   SCHOOL INFORMATION
+   ========================================================= */
+
+function loadSchoolInformation() {
+
+    if (
+        schoolNameInput
+    ) {
+
+        schoolNameInput.value =
+            reportSettings.schoolName ||
+            "";
+
+    }
+
+
+    if (
+        schoolAddressInput
+    ) {
+
+        schoolAddressInput.value =
+            reportSettings.schoolAddress ||
+            "";
+
+    }
+
+
+    displaySchoolLogoPreview();
+
+}
+
+
+/* =========================================================
+   SAVE SCHOOL INFORMATION
+   ========================================================= */
+
+function saveSchoolInformation() {
+
+    const schoolName =
+        schoolNameInput
+            ? schoolNameInput.value.trim()
+            : "";
+
+    const schoolAddress =
+        schoolAddressInput
+            ? schoolAddressInput.value.trim()
+            : "";
+
+
+    reportSettings.schoolName =
+        schoolName ||
+        "YOUR SCHOOL NAME";
+
+
+    reportSettings.schoolAddress =
+        schoolAddress ||
+        "YOUR SCHOOL ADDRESS";
+
+
+    saveAppData();
+
+
+    if (
+        schoolInformationStatus
+    ) {
+
+        schoolInformationStatus.textContent =
+            "✓ School information saved successfully.";
+
+    }
+
+
+    setTimeout(
+        function () {
+
+            if (
+                schoolInformationStatus
+            ) {
+
+                schoolInformationStatus.textContent =
+                    "";
+
+            }
+
+        },
+        3000
+    );
+
+}
+
+
+/* =========================================================
+   SCHOOL LOGO UPLOAD
+   ========================================================= */
+
+function handleSchoolLogoUpload(event) {
+
+    const file =
+        event.target.files &&
+        event.target.files[0];
+
+
+    if (!file) {
+
+        return;
+
+    }
+
+
+    const allowedTypes = [
+
+        "image/png",
+        "image/jpeg",
+        "image/jpg",
+        "image/webp"
+
+    ];
+
+
+    if (
+        !allowedTypes.includes(
+            file.type
+        )
+    ) {
+
+        alert(
+            "Please select a PNG, JPG or WEBP image."
+        );
+
+        event.target.value =
+            "";
+
+        return;
+
+    }
+
+
+    if (
+        file.size >
+        2 * 1024 * 1024
+    ) {
+
+        alert(
+            "Please choose a logo smaller than 2 MB."
+        );
+
+        event.target.value =
+            "";
+
+        return;
+
+    }
+
+
+    const reader =
+        new FileReader();
+
+
+    reader.onload =
+        function () {
+
+            reportSettings.schoolLogo =
+                reader.result;
+
+
+            saveAppData();
+
+
+            displaySchoolLogoPreview();
+
+
+            if (
+                schoolInformationStatus
+            ) {
+
+                schoolInformationStatus.textContent =
+                    "✓ School logo uploaded.";
+
+            }
+
+        };
+
+
+    reader.onerror =
+        function () {
+
+            alert(
+                "Unable to read the school logo."
+            );
+
+        };
+
+
+    reader.readAsDataURL(
+        file
+    );
+
+}
+
+
+/* =========================================================
+   DISPLAY SCHOOL LOGO PREVIEW
+   ========================================================= */
+
+function displaySchoolLogoPreview() {
+
+    if (
+        !schoolLogoPreview
+    ) {
+
+        return;
+
+    }
+
+
+    if (
+        !reportSettings.schoolLogo
+    ) {
+
+        schoolLogoPreview.innerHTML =
+            "";
+
+
+        if (
+            removeSchoolLogoButton
+        ) {
+
+            removeSchoolLogoButton.style.display =
+                "none";
+
+        }
+
+        return;
+
+    }
+
+
+    schoolLogoPreview.innerHTML = `
+
+        <div
+            style="
+                display:flex;
+                flex-direction:column;
+                align-items:flex-start;
+                gap:8px;
+            "
+        >
+
+            <strong>
+                Current Logo:
+            </strong>
+
+            <img
+                src="${reportSettings.schoolLogo}"
+                alt="School Logo"
+                style="
+                    width:120px;
+                    height:120px;
+                    object-fit:contain;
+                    border:1px solid #ccc;
+                    padding:5px;
+                    background:#fff;
+                    border-radius:6px;
+                "
+            >
+
+        </div>
+
+    `;
+
+
+    if (
+        removeSchoolLogoButton
+    ) {
+
+        removeSchoolLogoButton.style.display =
+            "inline-block";
+
+    }
+
+}
+
+
+/* =========================================================
+   REMOVE SCHOOL LOGO
+   ========================================================= */
+
+function removeSchoolLogo() {
+
+    reportSettings.schoolLogo =
+        "";
+
+
+    saveAppData();
+
+
+    if (
+        schoolLogoInput
+    ) {
+
+        schoolLogoInput.value =
+            "";
+
+    }
+
+
+    displaySchoolLogoPreview();
+
+
+    if (
+        schoolInformationStatus
+    ) {
+
+        schoolInformationStatus.textContent =
+            "School logo removed.";
+
+    }
+
+}
+
+
+/* =========================================================
    APPLICATION EVENTS
    ========================================================= */
 
@@ -2499,6 +2882,52 @@ function attachApplicationEvents() {
         generateAllButton.addEventListener(
             "click",
             generateAllReports
+        );
+
+    }
+
+
+    /* =====================================================
+       SCHOOL INFORMATION EVENTS
+       ===================================================== */
+
+    if (
+        elementExists(
+            saveSchoolInformationButton
+        )
+    ) {
+
+        saveSchoolInformationButton.addEventListener(
+            "click",
+            saveSchoolInformation
+        );
+
+    }
+
+
+    if (
+        elementExists(
+            schoolLogoInput
+        )
+    ) {
+
+        schoolLogoInput.addEventListener(
+            "change",
+            handleSchoolLogoUpload
+        );
+
+    }
+
+
+    if (
+        elementExists(
+            removeSchoolLogoButton
+        )
+    ) {
+
+        removeSchoolLogoButton.addEventListener(
+            "click",
+            removeSchoolLogo
         );
 
     }
@@ -4525,15 +4954,15 @@ function attachBehaviorData(
                             ] ||
                             "",
 
-                        "Class Teacher's Comment":
+                        "Class Teacher's Comment/Sign":
                             row[
-                                "Class Teacher's Comment"
+                                "Class Teacher's Comment/Sign"
                             ] ||
                             "",
 
-                        "Principal's Comment":
+                        "Principal's Comment/Sign":
                             row[
-                                "Principal's Comment"
+                                "Principal's Comment/Sign"
                             ] ||
                             ""
 
@@ -6068,6 +6497,23 @@ function createReport(student) {
         <div class="report">
 
             <div class="school-header">
+
+                ${
+                    reportSettings.schoolLogo
+                        ? `
+                            <div class="school-logo-container">
+
+                                <img
+                                    src="${reportSettings.schoolLogo}"
+                                    alt="School Logo"
+                                    class="school-logo"
+                                >
+
+                            </div>
+                          `
+                        : ""
+                }
+
 
                 <h1>
                     ${escapeHTML(
