@@ -6392,7 +6392,7 @@ function createReport(student) {
                 <p>
 
                     <strong>
-                        Class Teacher's Comment:
+                        Class Teacher's Comment & Signature:
                     </strong>
 
                 </p>
@@ -6410,7 +6410,7 @@ function createReport(student) {
                 <p>
 
                     <strong>
-                        Principal's Comment:
+                        Principal's Comment & Signature:
                     </strong>
 
                 </p>
