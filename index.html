@@ -36,6 +36,35 @@
 
     <script src="https://js.paystack.co/v2/inline.js"></script>
 
+
+<style>
+/* School information */
+#schoolInformationSection input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#schoolLogoPreview img {
+    max-width: 120px;
+    max-height: 120px;
+}
+
+/* Logo on generated report */
+.school-logo-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.school-logo {
+    width: 90px;
+    height: 90px;
+    object-fit: contain;
+    display: block;
+}
+</style>
+
 </head>
 
 
@@ -426,6 +455,98 @@
 
 
         <main>
+
+
+            <!-- =========================================
+                 SCHOOL INFORMATION
+            ========================================= -->
+
+            <section
+                class="card"
+                id="schoolInformationSection"
+            >
+
+                <h2>
+                    🏫 School Information
+                </h2>
+
+                <p>
+                    Enter your school information and upload
+                    the school logo. This information will appear
+                    on every generated student report.
+                </p>
+
+
+                <label for="schoolNameInput">
+                    <strong>School Name</strong>
+                </label>
+
+                <input
+                    type="text"
+                    id="schoolNameInput"
+                    placeholder="Enter school name"
+                >
+
+
+                <label
+                    for="schoolAddressInput"
+                    style="display:block; margin-top:15px;"
+                >
+                    <strong>School Address</strong>
+                </label>
+
+                <input
+                    type="text"
+                    id="schoolAddressInput"
+                    placeholder="Enter school address"
+                >
+
+
+                <label
+                    for="schoolLogoInput"
+                    style="display:block; margin-top:15px;"
+                >
+                    <strong>School Logo</strong>
+                </label>
+
+                <input
+                    type="file"
+                    id="schoolLogoInput"
+                    accept="image/png,image/jpeg,image/jpg,image/webp"
+                >
+
+
+                <div
+                    id="schoolLogoPreview"
+                    style="margin-top:15px;"
+                ></div>
+
+
+                <button
+                    type="button"
+                    id="removeSchoolLogo"
+                    style="display:none; margin-top:10px;"
+                >
+                    Remove Logo
+                </button>
+
+
+                <button
+                    type="button"
+                    id="saveSchoolInformation"
+                    style="margin-top:15px;"
+                >
+                    Save School Information
+                </button>
+
+
+                <p
+                    id="schoolInformationStatus"
+                    style="margin-top:10px;"
+                ></p>
+
+            </section>
+
 
 
             <!-- =================================
