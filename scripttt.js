@@ -3622,7 +3622,7 @@ function downloadExcelTemplate() {
             { wch: 9 },
             { wch: 10 },
             { wch: 10 },
-            { wch: 11 }
+            { wch: 12 }
 
         ];
 
@@ -3832,11 +3832,11 @@ function downloadExcelTemplate() {
 
                 subjectSheet["!cols"] = [
 
-                    { wch: 5 },
+                    { wch: 7 },
                     { wch: 14 },
-                    { wch: 5 },
-                    { wch: 5 },
-                    { wch: 5 }
+                    { wch: 6 },
+                    { wch: 6 },
+                    { wch: 6 }
 
                 ];
 
@@ -3936,7 +3936,7 @@ function downloadExcelTemplate() {
 
         behaviorSheet["!cols"] = [
 
-            { wch: 6 },
+            { wch: 7 },
             { wch: 14 },
 
             { wch: 9 },
@@ -5862,9 +5862,16 @@ function updateTemporaryGenerationMessage(
             total;
 
 
-        reportContainer.prepend(
-            progress
-        );
+        /* Keep progress OUTSIDE the generated report markup.
+           Putting it inside reportContainer makes it become the
+           first report and causes it to print on the first page. */
+        if (reportSection && reportContainer.parentElement === reportSection) {
+            reportSection.insertBefore(progress, reportContainer);
+        } else if (reportSection) {
+            reportSection.insertBefore(progress, reportContainer);
+        } else {
+            reportContainer.parentElement?.insertBefore(progress, reportContainer);
+        }
 
 
     } else {
@@ -5891,815 +5898,359 @@ function updateTemporaryGenerationMessage(
 function createReport(student) {
 
     const subjects = [];
+    let overallTotal = 0;
 
+    let subjectsToUse = schoolSubjects;
 
-    let overallTotal =
-        0;
+    const detectedSubjects = detectSubjectsFromRows([student]);
 
-
-    let subjectsToUse =
-        schoolSubjects;
-
-
-    const detectedSubjects =
-        detectSubjectsFromRows(
-            [student]
-        );
-
-
-    if (
-        detectedSubjects.length >
-        0
-    ) {
-
-        subjectsToUse =
-            detectedSubjects;
-
+    if (detectedSubjects.length > 0) {
+        subjectsToUse = detectedSubjects;
     }
-
 
     /* =====================================================
        SUBJECT RESULTS
        ===================================================== */
 
-    subjectsToUse.forEach(
-        function (subjectName) {
+    subjectsToUse.forEach(function (subjectName) {
 
-            const firstCAKey =
-                subjectName +
-                " 1st CA";
+        const firstCAKey = subjectName + " 1st CA";
+        const secondCAKey = subjectName + " 2nd CA";
+        const examsKey = subjectName + " Exams";
 
+        const firstCA = Number(student[firstCAKey]) || 0;
+        const secondCA = Number(student[secondCAKey]) || 0;
+        const exams = Number(student[examsKey]) || 0;
+        const total = firstCA + secondCA + exams;
 
-            const secondCAKey =
-                subjectName +
-                " 2nd CA";
+        const hasSubject =
+            Object.prototype.hasOwnProperty.call(student, firstCAKey) ||
+            Object.prototype.hasOwnProperty.call(student, secondCAKey) ||
+            Object.prototype.hasOwnProperty.call(student, examsKey);
 
+        if (hasSubject) {
+            subjects.push({
+                name: subjectName,
+                firstCA: firstCA,
+                secondCA: secondCA,
+                exams: exams,
+                total: total
+            });
 
-            const examsKey =
-                subjectName +
-                " Exams";
-
-
-            const firstCA =
-                Number(
-                    student[
-                        firstCAKey
-                    ]
-                ) || 0;
-
-
-            const secondCA =
-                Number(
-                    student[
-                        secondCAKey
-                    ]
-                ) || 0;
-
-
-            const exams =
-                Number(
-                    student[
-                        examsKey
-                    ]
-                ) || 0;
-
-
-            const total =
-                firstCA +
-                secondCA +
-                exams;
-
-
-            const hasSubject =
-
-                Object.prototype
-                    .hasOwnProperty.call(
-                        student,
-                        firstCAKey
-                    ) ||
-
-                Object.prototype
-                    .hasOwnProperty.call(
-                        student,
-                        secondCAKey
-                    ) ||
-
-                Object.prototype
-                    .hasOwnProperty.call(
-                        student,
-                        examsKey
-                    );
-
-
-            if (hasSubject) {
-
-                subjects.push({
-
-                    name:
-                        subjectName,
-
-                    firstCA:
-                        firstCA,
-
-                    secondCA:
-                        secondCA,
-
-                    exams:
-                        exams,
-
-                    total:
-                        total
-
-                });
-
-
-                overallTotal +=
-                    total;
-
-            }
-
+            overallTotal += total;
         }
-    );
-
-
-    /* =====================================================
-       AVERAGE
-       ===================================================== */
-
-    const numberOfSubjects =
-        subjects.length;
-
-
-    const average =
-
-        numberOfSubjects > 0
-
-            ? overallTotal /
-              numberOfSubjects
-
-            : 0;
-
-
-    const grade =
-        getGrade(
-            average
-        );
-
+    });
 
     /* =====================================================
-       POSITION FROM UPLOADED TEMPLATE
+       AVERAGE / GRADE
        ===================================================== */
 
-    const positionValue =
-        student[
-            "Position"
-        ];
+    const numberOfSubjects = subjects.length;
 
+    const average = numberOfSubjects > 0
+        ? overallTotal / numberOfSubjects
+        : 0;
 
-    const hasPosition =
-        String(
-            positionValue ??
-            ""
-        ).trim() !== "";
+    const grade = getGrade(average);
 
+    /* =====================================================
+       POSITION
+       ===================================================== */
 
-    let position =
-        null;
+    const positionValue = student["Position"];
 
+    const hasPosition = String(positionValue ?? "").trim() !== "";
+
+    let position = null;
 
     if (hasPosition) {
+        const numericPosition = Number(positionValue);
 
-        const numericPosition =
-            Number(
-                positionValue
-            );
-
-
-        if (
-            !isNaN(
-                numericPosition
-            )
-        ) {
-
-            position =
-                numericPosition;
-
+        if (!isNaN(numericPosition)) {
+            position = numericPosition;
         }
-
     }
 
-
     /* =====================================================
-       NUMBER OF STUDENTS IN CLASS
+       CLASS SIZE
        ===================================================== */
 
-    const classSize =
-        students.filter(
-            function (student) {
-
-                return String(
-                    student[
-                        "Student Name"
-                    ] ||
-                    ""
-                ).trim() !== "";
-
-            }
-        ).length;
-
+    const classSize = students.filter(function (record) {
+        return String(record["Student Name"] || "").trim() !== "";
+    }).length;
 
     /* =====================================================
        SUBJECT ROWS
        ===================================================== */
 
-    let subjectRows =
-        "";
+    let subjectRows = "";
 
+    subjects.forEach(function (subject, index) {
 
-    subjects.forEach(
-        function (
-            subject,
-            index
-        ) {
+        const subjectGrade = getGrade(subject.total);
 
-            subjectRows += `
-
-                <tr>
-
-                    <td>
-                        ${index + 1}
-                    </td>
-
-                    <td class="subject-name">
-                        ${escapeHTML(
-                            subject.name
-                        )}
-                    </td>
-
-                    <td>
-                        ${formatScore(
-                            subject.firstCA
-                        )}
-                    </td>
-
-                    <td>
-                        ${formatScore(
-                            subject.secondCA
-                        )}
-                    </td>
-
-                    <td>
-                        ${formatScore(
-                            subject.exams
-                        )}
-                    </td>
-
-                    <td class="total-cell">
-                        ${formatScore(
-                            subject.total
-                        )}
-                    </td>
-
-                    <td class="grade-cell">
-                        ${getGrade(
-                            subject.total
-                        )}
-                    </td>
-
-                </tr>
-
-            `;
-
-        }
-    );
-
+        subjectRows += `
+            <tr>
+                <td class="serial-cell">${index + 1}</td>
+                <td class="subject-name">${escapeHTML(subject.name)}</td>
+                <td>${formatScore(subject.firstCA)}</td>
+                <td>${formatScore(subject.secondCA)}</td>
+                <td>${formatScore(subject.exams)}</td>
+                <td class="total-cell">${formatScore(subject.total)}</td>
+                <td class="grade-cell grade-${subjectGrade}">${subjectGrade}</td>
+            </tr>
+        `;
+    });
 
     /* =====================================================
        BEHAVIORAL DATA
        ===================================================== */
 
-    const behavior =
-        student.__behavior ||
-        {};
+    const behavior = student.__behavior || {};
 
+    let traitHeaders = `<th class="trait-title">TRAIT</th>`;
 
-    /* =====================================================
-       TRAIT HEADERS
-       ===================================================== */
+    behavioralTraits.forEach(function (trait) {
+        traitHeaders += `
+            <th>${escapeHTML(trait)}</th>
+        `;
+    });
 
-    let traitHeaders = `
+    let traitRatings = `<td class="trait-title">Rating</td>`;
 
-        <th class="trait-title">
-            TRAIT
-        </th>
+    behavioralTraits.forEach(function (trait) {
+        const rating = behavior[trait] !== undefined ? behavior[trait] : "";
 
-    `;
+        traitRatings += `
+            <td class="trait-rating">${escapeHTML(rating)}</td>
+        `;
+    });
 
+    const teacherComment = behavior["Class Teacher's Comment"] || "";
+    const principalComment = behavior["Principal's Comment"] || "";
 
-    behavioralTraits.forEach(
-        function (trait) {
-
-            traitHeaders += `
-
-                <th>
-                    ${escapeHTML(
-                        trait
-                    )}
-                </th>
-
-            `;
-
-        }
-    );
-
-
-    /* =====================================================
-       TRAIT RATINGS
-       ===================================================== */
-
-    let traitRatings = `
-
-        <td class="trait-title">
-            Rating
-        </td>
-
-    `;
-
-
-    behavioralTraits.forEach(
-        function (trait) {
-
-            const rating =
-
-                behavior[trait] !==
-                undefined
-
-                    ? behavior[trait]
-
-                    : "";
-
-
-            traitRatings += `
-
-                <td class="trait-rating">
-
-                    ${escapeHTML(
-                        rating
-                    )}
-
-                </td>
-
-            `;
-
-        }
-    );
-
-
-    /* =====================================================
-       COMMENTS
-       ===================================================== */
-
-    const teacherComment =
-        behavior[
-            "Class Teacher's Comment"
-        ] || "";
-
-
-    const principalComment =
-        behavior[
-            "Principal's Comment"
-        ] || "";
-
-
-    /* =====================================================
-       HOUSE
-       ===================================================== */
-
-    const studentHouse =
-        student[
-            "House"
-        ] || "";
-
+    const studentHouse = student["House"] || "";
 
     /* =====================================================
        DYNAMIC MARKING SETTINGS
        ===================================================== */
 
-    const firstCAMax =
-        Number(
-            reportSettings
-                .firstCAMaximum
-        ) || 20;
+    const firstCAMax = Number(reportSettings.firstCAMaximum) || 20;
+    const secondCAMax = Number(reportSettings.secondCAMaximum) || 20;
+    const examsMax = Number(reportSettings.examsMaximum) || 60;
+    const totalMaximum = firstCAMax + secondCAMax + examsMax;
 
-
-    const secondCAMax =
-        Number(
-            reportSettings
-                .secondCAMaximum
-        ) || 20;
-
-
-    const examsMax =
-        Number(
-            reportSettings
-                .examsMaximum
-        ) || 60;
-
-
-    const totalMaximum =
-        firstCAMax +
-        secondCAMax +
-        examsMax;
-
+    const studentName = student["Student Name"] || "";
+    const admissionNo = student["Admission No"] || "";
+    const gender = student["Gender"] || "";
+    const studentClass = student["Class"] || "";
+    const term = student["Term"] || "";
+    const session = student["Session"] || "";
 
     /* =====================================================
-       REPORT
+       PROFESSIONAL REPORT
        ===================================================== */
 
     return `
+        <article class="report">
 
-        <div class="report">
+            <div class="report-top-accent"></div>
 
-            <div class="school-header">
-
-                ${
-                    reportSettings.schoolLogo
-                        ? `
-                            <div class="school-logo-container">
-
+            <header class="school-header">
+                <div class="school-logo-container">
+                    ${
+                        reportSettings.schoolLogo
+                            ? `
                                 <img
                                     src="${reportSettings.schoolLogo}"
                                     alt="School Logo"
                                     class="school-logo"
                                 >
-
-                            </div>
-                          `
-                        : ""
-                }
-
-
-                <h1>
-                    ${escapeHTML(
-                        reportSettings
-                            .schoolName
-                    )}
-                </h1>
-
-                <p>
-                    ${escapeHTML(
-                        reportSettings
-                            .schoolAddress
-                    )}
-                </p>
-
-                <h2>
-                    STUDENT REPORT SHEET
-                </h2>
-
-            </div>
-
-
-            <!-- STUDENT INFORMATION -->
-
-            <div class="student-info">
-
-                <div>
-
-                    <strong>
-                        Admission No:
-                    </strong>
-
-                    ${escapeHTML(
-                        student[
-                            "Admission No"
-                        ] || ""
-                    )}
-
+                              `
+                            : ""
+                    }
                 </div>
 
+                <div class="school-heading">
+                    <h1>${escapeHTML(reportSettings.schoolName)}</h1>
+                    <p>${escapeHTML(reportSettings.schoolAddress)}</p>
+                    <div class="report-title">STUDENT ACADEMIC REPORT</div>
+                </div>
+            </header>
 
-                <div>
-
-                    <strong>
-                        Student Name:
-                    </strong>
-
-                    ${escapeHTML(
-                        student[
-                            "Student Name"
-                        ] || ""
-                    )}
-
+            <section class="student-profile">
+                <div class="section-heading">
+                    <span class="section-number">01</span>
+                    <div>
+                        <h2>Student Information</h2>
+                        <p>Personal and class details</p>
+                    </div>
                 </div>
 
+                <div class="student-info">
+                    <div class="student-info-row term-session-row">
+                        <div class="info-item"><strong>TERM:</strong> ${escapeHTML(term)}</div>
+                        <div class="info-item"><strong>SESSION:</strong> ${escapeHTML(session)}</div>
+                    </div>
+                    <div class="info-item info-name">
+                        <span class="info-label">Student Name</span>
+                        <strong>${escapeHTML(studentName)}</strong>
+                    </div>
 
-                <div>
+                    <div class="info-item">
+                        <span class="info-label">Admission No.</span>
+                        <strong>${escapeHTML(admissionNo)}</strong>
+                    </div>
 
-                    <strong>
-                        Gender:
-                    </strong>
+                    <div class="info-item">
+                        <span class="info-label">Class</span>
+                        <strong>${escapeHTML(studentClass)}</strong>
+                    </div>
 
-                    ${escapeHTML(
-                        student[
-                            "Gender"
-                        ] || ""
-                    )}
+                    <div class="info-item">
+                        <span class="info-label">Gender</span>
+                        <strong>${escapeHTML(gender)}</strong>
+                    </div>
 
+                    <div class="info-item">
+                        <span class="info-label">House</span>
+                        <strong>${escapeHTML(studentHouse)}</strong>
+                    </div>
+
+                    <div class="info-item">
+                        <span class="info-label">Class Size</span>
+                        <strong>${classSize}</strong>
+                    </div>
+                </div>
+            </section>
+
+            <section class="academic-section">
+                <div class="section-heading">
+                    <span class="section-number">02</span>
+                    <div>
+                        <h2>Academic Performance</h2>
+                        <p>Subject-by-subject assessment</p>
+                    </div>
                 </div>
 
-
-                <div>
-
-                    <strong>
-                        Class:
-                    </strong>
-
-                    ${escapeHTML(
-                        student[
-                            "Class"
-                        ] || ""
-                    )}
-
-                </div>
-
-
-                <div>
-
-                    <strong>
-                        House:
-                    </strong>
-
-                    ${escapeHTML(
-                        studentHouse
-                    )}
-
-                </div>
-
-
-                <div>
-
-                    <strong>
-                        Term:
-                    </strong>
-
-                    ${escapeHTML(
-                        student[
-                            "Term"
-                        ] || ""
-                    )}
-
-                </div>
-
-
-                <div>
-
-                    <strong>
-                        Session:
-                    </strong>
-
-                    ${escapeHTML(
-                        student[
-                            "Session"
-                        ] || ""
-                    )}
-
-                </div>
-
-
-                <div>
-
-                    <strong>
-                        Class Size:
-                    </strong>
-
-                    ${classSize}
-
-                </div>
-
-            </div>
-
-
-            <!-- SUBJECT RESULTS -->
-
-            <table class="result-table">
-
-                <thead>
-
-                    <tr>
-
-                        <th>
-                            No.
-                        </th>
-
-                        <th>
-                            Subject
-                        </th>
-
-                        <th>
-                            1st CA<br>
-                            (${firstCAMax} mks)
-                        </th>
-
-                        <th>
-                            2nd CA<br>
-                            (${secondCAMax} mks)
-                        </th>
-
-                        <th>
-                            Exams<br>
-                            (${examsMax} mks)
-                        </th>
-
-                        <th>
-                            Total<br>
-                            (${totalMaximum} Mks)
-                        </th>
-
-                        <th>
-                            Grade
-                        </th>
-
-                    </tr>
-
-                </thead>
-
-
-                <tbody>
-
-                    ${subjectRows}
-
-                </tbody>
-
-
-                <tfoot>
-
-                    <tr>
-
-                        <th colspan="5">
-                            OVERALL TOTAL
-                        </th>
-
-                        <th colspan="2">
-                            ${overallTotal.toFixed(2)}
-                        </th>
-
-                    </tr>
-
-                </tfoot>
-
-            </table>
-
-
-            <!-- SUMMARY -->
-
-            <div class="summary">
-
-                <p>
-
-                    <strong>
-                        Overall Total
-                    </strong>
-
-                    ${overallTotal.toFixed(2)}
-
-                </p>
-
-
-                <p>
-
-                    <strong>
-                        Average
-                    </strong>
-
-                    ${average.toFixed(2)}%
-
-                </p>
-
-
-                <p>
-
-                    <strong>
-                        Class Position
-                    </strong>
-
-                    <span class="position-value">
-
-                        ${
-                            hasPosition &&
-                            position !== null
-
-                                ? formatPosition(
-                                    position
-                                )
-
-                                : ""
-                        }
-
-                    </span>
-
-                </p>
-
-
-                <p>
-
-                    <strong>
-                        Overall Grade
-                    </strong>
-
-                    ${grade}
-
-                </p>
-
-            </div>
-
-
-            <!-- BEHAVIORAL TRAITS -->
-
-            <div class="behavior-section">
-
-                <h3>
-                    BEHAVIORAL TRAITS
-                </h3>
-
-                <p>
-                    Rating: 1 = Lowest, 5 = Highest
-                </p>
-
-
-                <table class="behavior-table">
-
+                <table class="result-table">
                     <thead>
-
                         <tr>
-
-                            ${traitHeaders}
-
+                            <th>No.</th>
+                            <th>Subject</th>
+                            <th>1st CA<br><small>${firstCAMax} mks</small></th>
+                            <th>2nd CA<br><small>${secondCAMax} mks</small></th>
+                            <th>Exams<br><small>${examsMax} mks</small></th>
+                            <th>Total<br><small>${totalMaximum} mks</small></th>
+                            <th>Grade</th>
                         </tr>
-
                     </thead>
 
-
                     <tbody>
-
-                        <tr>
-
-                            ${traitRatings}
-
-                        </tr>
-
+                        ${subjectRows}
                     </tbody>
 
+                    <tfoot>
+                        <tr>
+                            <th colspan="5">OVERALL TOTAL</th>
+                            <th colspan="2">${overallTotal.toFixed(2)}</th>
+                        </tr>
+                    </tfoot>
                 </table>
+            </section>
 
-            </div>
-
-
-            <!-- COMMENTS -->
-
-            <div class="comments">
-
-                <p>
-
-                    <strong>
-                        Class Teacher's Comment & Signature:
-                    </strong>
-
-                </p>
-
-
-                <div class="comment-box">
-
-                    ${escapeHTML(
-                        teacherComment
-                    )}
-
+            <section class="summary-section">
+                <div class="section-heading compact-heading">
+                    <span class="section-number">03</span>
+                    <div>
+                        <h2>Performance Summary</h2>
+                    </div>
                 </div>
 
+                <div class="summary">
+                    <div class="summary-card">
+                        <span>Overall Total</span>
+                        <strong>${overallTotal.toFixed(2)}</strong>
+                    </div>
 
-                <p>
+                    <div class="summary-card">
+                        <span>Average</span>
+                        <strong>${average.toFixed(2)}%</strong>
+                    </div>
 
-                    <strong>
-                        Principal's Comment & Signature:
-                    </strong>
+                    <div class="summary-card">
+                        <span>Class Position</span>
+                        <strong class="position-value">
+                            ${
+                                hasPosition && position !== null
+                                    ? formatPosition(position)
+                                    : "—"
+                            }
+                        </strong>
+                    </div>
 
-                </p>
+                    <div class="summary-card highlight-grade">
+                        <span>Overall Grade</span>
+                        <strong>${grade}</strong>
+                    </div>
+                </div>
+            </section>
 
-
-                <div class="comment-box">
-
-                    ${escapeHTML(
-                        principalComment
-                    )}
-
+            <section class="behavior-section">
+                <div class="section-heading">
+                    <span class="section-number">04</span>
+                    <div>
+                        <h2>Behavioural Development</h2>
+                        <p>Rating scale: 1 = Lowest &nbsp;•&nbsp; 5 = Highest</p>
+                    </div>
                 </div>
 
-            </div>
+                <table class="behavior-table">
+                    <thead>
+                        <tr>${traitHeaders}</tr>
+                    </thead>
+                    <tbody>
+                        <tr>${traitRatings}</tr>
+                    </tbody>
+                </table>
+            </section>
 
-        </div>
+            <section class="comments">
+                <div class="section-heading">
+                    <span class="section-number">05</span>
+                    <div>
+                        <h2>Assessment & Comments</h2>
+                    </div>
+                </div>
 
+                <div class="comment-grid">
+                    <div class="comment-card">
+                        <div class="comment-label">CLASS TEACHER'S COMMENT</div>
+                        <div class="comment-box">${escapeHTML(teacherComment)}</div>
+                        <div class="signature-line">
+                            <span>Class Teacher</span>
+                            <span>Date</span>
+                        </div>
+                    </div>
+
+                    <div class="comment-card">
+                        <div class="comment-label">PRINCIPAL'S COMMENT</div>
+                        <div class="comment-box">${escapeHTML(principalComment)}</div>
+                        <div class="signature-line">
+                            <span>Principal</span>
+                            <span>Date</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <footer class="report-footer">
+                <span>Student Academic Report</span>
+                <span>${escapeHTML(term)} • ${escapeHTML(session)}</span>
+            </footer>
+
+        </article>
     `;
-
 }
 
 
@@ -7417,3 +6968,48 @@ function escapeHTML(
 /* =========================================================
    END OF SCRIPT
    ========================================================= */
+
+/* =========================================================
+   REPORT-ONLY PRINT / SAVE-TO-PDF PROTECTION
+
+   A dedicated print layer is used so the application controls,
+   including Step 3, can NEVER become part of the first report.
+   ========================================================= */
+
+let reportPrintLayer = null;
+
+function prepareReportsForPrint() {
+    if (!reportContainer) return;
+
+    /* Remove an old layer if a mobile browser fires beforeprint twice. */
+    if (reportPrintLayer) {
+        reportPrintLayer.remove();
+        reportPrintLayer = null;
+    }
+
+    reportPrintLayer = document.createElement("div");
+    reportPrintLayer.id = "reportPrintLayer";
+    reportPrintLayer.innerHTML = reportContainer.innerHTML;
+    document.body.appendChild(reportPrintLayer);
+
+    document.documentElement.classList.add("printing-reports");
+}
+
+function restoreReportsAfterPrint() {
+    document.documentElement.classList.remove("printing-reports");
+
+    if (reportPrintLayer) {
+        reportPrintLayer.remove();
+        reportPrintLayer = null;
+    }
+}
+
+window.addEventListener("beforeprint", prepareReportsForPrint);
+window.addEventListener("afterprint", restoreReportsAfterPrint);
+
+/* Mobile browsers are not always consistent with afterprint. */
+window.addEventListener("focus", function () {
+    if (document.documentElement.classList.contains("printing-reports")) {
+        setTimeout(restoreReportsAfterPrint, 500);
+    }
+});
