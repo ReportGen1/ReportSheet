@@ -4969,15 +4969,15 @@ function attachBehaviorData(
                             ] ||
                             "",
 
-                        "Class Teacher's Comment/Sign":
+                        "Class Teacher's Comment":
                             row[
-                                "Class Teacher's Comment/Sign"
+                                "Class Teacher's Comment"
                             ] ||
                             "",
 
-                        "Principal's Comment/Sign":
+                        "Principal's Comment":
                             row[
-                                "Principal's Comment/Sign"
+                                "Principal's Comment"
                             ] ||
                             ""
 
@@ -4986,7 +4986,7 @@ function attachBehaviorData(
 
             }
 
-        }
+        } 
     );
 
 
@@ -6225,7 +6225,7 @@ function createReport(student) {
 
                 <div class="comment-grid">
                     <div class="comment-card">
-                        <div class="comment-label">CLASS TEACHER'S COMMENT</div>
+                        <div class="comment-label">CLASS TEACHER'S COMMENT & SIGNATURE</div>
                         <div class="comment-box">${escapeHTML(teacherComment)}</div>
                         <div class="signature-line">
                             <span>Class Teacher</span>
@@ -6234,7 +6234,7 @@ function createReport(student) {
                     </div>
 
                     <div class="comment-card">
-                        <div class="comment-label">PRINCIPAL'S COMMENT</div>
+                        <div class="comment-label">PRINCIPAL'S COMMENT & SIGNATURE</div>
                         <div class="comment-box">${escapeHTML(principalComment)}</div>
                         <div class="signature-line">
                             <span>Principal</span>
