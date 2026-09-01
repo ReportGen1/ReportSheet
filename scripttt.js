@@ -1,4 +1,19 @@
 /* =========================================================
+   RENEWAL / CARRY-OVER CONTRACT
+   =========================================================
+
+   Before payment, the client calculates the unused balance from the
+   current subscription and sends it to the paystack-verification Edge
+   Function as previous_remaining_reports.
+
+   The server-side renewal must store that value in the NEW row as
+   carried_over_reports and reset reports_generated to 0.
+
+   Example: old limit 100, old usage 35 -> 65 carried over; new
+   Standard limit 500 -> 565 total available.
+   ========================================================= */
+
+/* =========================================================
    STUDENT REPORT GENERATOR
    COMPLETE CLEANED script.js
    ========================================================= */
@@ -5138,6 +5153,46 @@ function getPlanDisplayName() {
 
 
 /* =========================================================
+   REPORT BALANCE HELPERS
+
+   A renewal starts a fresh usage counter. Unused reports from the
+   previous subscription are stored in carried_over_reports.
+   The available balance is therefore:
+
+       NEW PLAN LIMIT + CARRIED-OVER REPORTS - CURRENT USAGE
+   ========================================================= */
+
+function getCarriedOverReports(subscription = currentSubscription) {
+    return Math.max(Number(subscription?.carried_over_reports) || 0, 0);
+}
+
+function getTotalAvailableReports(subscription = currentSubscription) {
+    const plan = String(
+        subscription?.plan ||
+        subscription?.subscription_plan ||
+        subscription?.package ||
+        currentSubscriptionPlan ||
+        ""
+    ).trim().toLowerCase();
+
+    return (REPORT_LIMITS[plan] || 0) +
+        getCarriedOverReports(subscription);
+}
+
+function getReportsRemaining(subscription = currentSubscription) {
+    const generated = Math.max(
+        Number(subscription?.reports_generated ?? reportsGenerated) || 0,
+        0
+    );
+
+    return Math.max(
+        getTotalAvailableReports(subscription) - generated,
+        0
+    );
+}
+
+
+/* =========================================================
     UPDATE REPORT STATUS
     ========================================================= */
 
@@ -5639,351 +5694,120 @@ async function generateSingleReport() {
 
 async function generateAllReports() {
 
-    if (
-        !students ||
-        students.length ===
-        0
-    ) {
-
-        alert(
-            "❌ Please upload an Excel file containing student records first."
-        );
-
+    if (!students || students.length === 0) {
+        alert("❌ Please upload an Excel file containing student records first.");
         return;
-
     }
 
-
-    const limit =
-        getReportLimit();
-
-
+    const limit = getReportLimit();
     if (!limit) {
-
-        alert(
-            "❌ Your subscription plan could not be determined."
-        );
-
+        alert("❌ Your subscription plan could not be determined.");
         return;
-
     }
 
-
-    const remaining =
-        Math.max(
-            limit -
-            reportsGenerated,
-            0
-        );
-
-
-    if (
-        remaining <=
+    /* INCLUDE CARRIED-OVER REPORTS */
+    const carriedOver = getCarriedOverReports();
+    const totalAvailable = limit + carriedOver;
+    const remaining = Math.max(
+        totalAvailable - reportsGenerated,
         0
-    ) {
+    );
 
+    if (remaining <= 0) {
         alert(
-
             "⚠️ REPORT GENERATION LIMIT REACHED\n\n" +
-
-            "Subscription: " +
-            getPlanDisplayName() +
-            "\n" +
-
-            "Reports generated: " +
-            reportsGenerated +
-            " / " +
-            limit +
-            "\n\n" +
-
-            "Please upgrade your subscription to generate more reports."
-
+            "Subscription: " + getPlanDisplayName() + "\n" +
+            "Reports generated: " + reportsGenerated + " / " + totalAvailable +
+            "\n\nPlease renew or upgrade your subscription to generate more reports."
         );
-
-
         updateReportStatus();
-
-
         return;
-
     }
 
+    const totalStudents = students.length;
+    const numberToGenerate = Math.min(totalStudents, remaining);
+    const stoppedByLimit = totalStudents > remaining;
 
-    const totalStudents =
-        students.length;
+    const confirmation = confirm(
+        "Generate reports for " + numberToGenerate + " student(s)?\n\n" +
+        "Subscription: " + getPlanDisplayName() + "\n" +
+        "Current reports generated: " + reportsGenerated + " / " + totalAvailable + "\n" +
+        "Carried-over reports: " + carriedOver + "\n" +
+        "Reports remaining: " + remaining +
+        (stoppedByLimit
+            ? "\n\n⚠️ Your available balance means only " + numberToGenerate + " report(s) can be generated."
+            : "")
+    );
 
-
-    let numberToGenerate =
-        totalStudents;
-
-
-    let stoppedByLimit =
-        false;
-
-
-    if (
-        totalStudents >
-        remaining
-    ) {
-
-        numberToGenerate =
-            remaining;
-
-        stoppedByLimit =
-            true;
-
-    }
-
-
-    const confirmation =
-        confirm(
-
-            "Generate reports for " +
-            numberToGenerate +
-            " student(s)?\n\n" +
-
-            "Subscription: " +
-            getPlanDisplayName() +
-            "\n" +
-
-            "Current reports generated: " +
-            reportsGenerated +
-            " / " +
-            limit +
-            "\n" +
-
-            "Reports remaining: " +
-            remaining +
-
-            (
-
-                stoppedByLimit
-
-                    ? "\n\n⚠️ Your subscription limit means only " +
-                      numberToGenerate +
-                      " report(s) can be generated."
-
-                    : ""
-
-            )
-
-        );
-
-
-    if (!confirmation) {
-
+    if (!confirmation || !canGenerateReports(numberToGenerate)) {
         return;
-
     }
-
-
-    if (
-        !canGenerateReports(
-            numberToGenerate
-        )
-    ) {
-
-        return;
-
-    }
-
 
     if (reportContainer) {
-
-        reportContainer.innerHTML =
-            "";
-
+        reportContainer.innerHTML = "";
     }
 
+    let generatedCount = 0;
 
-    let generatedCount =
-        0;
+    for (let i = 0; i < numberToGenerate; i++) {
+        const student = students[i];
+        if (!student) continue;
 
-
-    for (
-        let i = 0;
-        i < numberToGenerate;
-        i++
-    ) {
-
-        const student =
-            students[i];
-
-
-        if (!student) {
-
-            continue;
-
-        }
-
-
-        const report =
-            createReport(
-                student
-            );
-
-
+        const report = createReport(student);
         if (reportContainer) {
-
-            reportContainer.insertAdjacentHTML(
-                "beforeend",
-                report
-            );
-
+            reportContainer.insertAdjacentHTML("beforeend", report);
         }
-
 
         generatedCount++;
 
-
-        /* =========================
-           UPDATE PROGRESS
-           ========================= */
-
-        if (
-            generatedCount %
-            10 ===
-            0
-        ) {
-
+        if (generatedCount % 10 === 0) {
             updateTemporaryGenerationMessage(
                 generatedCount,
                 numberToGenerate
             );
 
-
-            await new Promise(
-                function (resolve) {
-
-                    setTimeout(
-                        resolve,
-                        0
-                    );
-
-                }
-            );
-
+            await new Promise(function (resolve) {
+                setTimeout(resolve, 0);
+            });
         }
-
     }
 
+    const generationProgress = document.getElementById("generationProgress");
+    if (generationProgress) generationProgress.remove();
 
-    /* =====================================================
-       REMOVE TEMPORARY PROGRESS MESSAGE
-       BEFORE SAVING REPORTS
-       ===================================================== */
-
-    const generationProgress =
-        document.getElementById(
-            "generationProgress"
-        );
-
-
-    if (generationProgress) {
-
-        generationProgress.remove();
-
-    }
-
-
-    /* =====================================================
-       SAVE ALL GENERATED REPORTS
-       ===================================================== */
-
-    if (
-        generatedCount >
-        0
-    ) {
-
+    if (generatedCount > 0) {
         saveGeneratedReports();
 
-
-        await incrementReportCount(
-            generatedCount
-        );
-
+        const countUpdated = await incrementReportCount(generatedCount);
+        if (!countUpdated) {
+            console.error(
+                "The reports were generated locally, but the server could not update the report count."
+            );
+            alert(
+                "⚠️ Reports were generated, but the server could not update the usage count. Please refresh and check your subscription status before generating more reports."
+            );
+        }
     }
-
 
     updateReportStatus();
 
-
     if (stoppedByLimit) {
-
         alert(
-
-            "⚠️ Generation stopped at your subscription limit.\n\n" +
-
-            "Subscription: " +
-            getPlanDisplayName() +
-            "\n" +
-
-            "Reports generated this operation: " +
-            generatedCount +
-            "\n" +
-
-            "Total reports generated: " +
-            reportsGenerated +
-            " / " +
-            limit +
-            "\n\n" +
-
-            "There were " +
-            (
-                totalStudents -
-                numberToGenerate
-            ) +
-            " student(s) remaining."
-
+            "⚠️ Generation stopped at your available report limit.\n\n" +
+            "Subscription: " + getPlanDisplayName() + "\n" +
+            "Reports generated this operation: " + generatedCount + "\n" +
+            "Total reports generated: " + reportsGenerated + " / " + totalAvailable + "\n\n" +
+            "There were " + (totalStudents - numberToGenerate) + " student(s) remaining."
         );
-
-
     } else {
-
         alert(
-
             "✅ All reports generated successfully.\n\n" +
-
-            "Reports generated: " +
-            generatedCount +
-            "\n" +
-
-            "Total used: " +
-            reportsGenerated +
-            " / " +
-            limit +
-            "\n" +
-
-            "Reports remaining: " +
-
-            Math.max(
-                limit -
-                reportsGenerated,
-                0
-            )
-
+            "Reports generated: " + generatedCount + "\n" +
+            "Total reports generated: " + reportsGenerated + " / " + totalAvailable
         );
-
     }
-
-
-    if (reportContainer) {
-
-        reportContainer.scrollIntoView({
-
-            behavior:
-                "smooth"
-
-        });
-
-    }
-
 }
 
-
-/* =========================================================
-   TEMPORARY GENERATION MESSAGE
-   ========================================================= */
 
 function updateTemporaryGenerationMessage(
     generated,
@@ -7275,6 +7099,12 @@ async function startPaystackPayment(
             button.dataset.duration ||
             "";
 
+        /* CAPTURE THE UNUSED OLD BALANCE BEFORE RENEWAL */
+        const renewalCarryOver = currentSubscription
+            ? getReportsRemaining(currentSubscription)
+            : 0;
+
+
 
         if (
             !plan ||
@@ -7336,7 +7166,10 @@ async function startPaystackPayment(
                         duration,
 
                     website_id:
-                        WEBSITE_ID
+                        WEBSITE_ID,
+
+                    previous_remaining_reports:
+                        renewalCarryOver
 
                 },
 
@@ -7357,7 +7190,8 @@ async function startPaystackPayment(
 
                         await verifyPaystackPayment(
                             response.reference,
-                            plan
+                            plan,
+                            renewalCarryOver
                         );
 
                     },
@@ -7405,7 +7239,8 @@ async function startPaystackPayment(
 
 async function verifyPaystackPayment(
     reference,
-    plan
+    plan,
+    previousRemainingReports = 0
 ) {
 
     try {
@@ -7429,7 +7264,10 @@ async function verifyPaystackPayment(
                                 plan,
 
                             website_id:
-                                WEBSITE_ID
+                                WEBSITE_ID,
+
+                            previous_remaining_reports:
+                                previousRemainingReports
 
                         }
 
