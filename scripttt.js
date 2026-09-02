@@ -88,10 +88,157 @@ const REPORT_SETTINGS_STORAGE_KEY =
 const GENERATED_REPORTS_STORAGE_KEY =
     "studentReportGeneratorGeneratedReports";
 
-const GENERATED_REPORTS_META_STORAGE_KEY =
-    "studentReportGeneratorGeneratedReportsMeta";
+/* =========================================================
+   GENERATION LEDGER
 
-let generatedReportKeys = [];
+   A report must not consume another allowance merely because the
+   user refreshed the page, generated the same student again, or
+   switched between Generate Student and Generate All modes.
+
+   The ledger is scoped to the active subscription and stores a
+   fingerprint of the report data. A changed score/comment/term/etc.
+   produces a new fingerprint and can therefore be charged normally.
+   A new subscription gets a new scope, so the user can use the new
+   allowance normally.
+   ========================================================= */
+const REPORT_GENERATION_LEDGER_KEY =
+    "studentReportGeneratorGenerationLedger";
+
+function getGenerationLedger() {
+    try {
+        const raw = localStorage.getItem(REPORT_GENERATION_LEDGER_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (error) {
+        console.error("Unable to read report generation ledger:", error);
+        return {};
+    }
+}
+
+function saveGenerationLedger(ledger) {
+    try {
+        localStorage.setItem(
+            REPORT_GENERATION_LEDGER_KEY,
+            JSON.stringify(ledger)
+        );
+    } catch (error) {
+        console.error("Unable to save report generation ledger:", error);
+    }
+}
+
+function getCurrentSubscriptionScope() {
+    if (!currentSubscription) return "no-subscription";
+
+    return String(
+        currentSubscription.id ||
+        currentSubscription.created_at ||
+        currentSubscription.expires_at ||
+        currentSubscription.plan ||
+        currentSubscriptionPlan ||
+        "subscription"
+    );
+}
+
+function stableValue(value) {
+    if (value === null || value === undefined) return "";
+    if (typeof value !== "object") return String(value);
+
+    if (Array.isArray(value)) {
+        return value.map(stableValue);
+    }
+
+    const output = {};
+    Object.keys(value).sort().forEach(function (key) {
+        if (key === "__generationFingerprint") return;
+        output[key] = stableValue(value[key]);
+    });
+    return output;
+}
+
+function simpleHash(text) {
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+        hash ^= text.charCodeAt(i);
+        hash +=
+            (hash << 1) +
+            (hash << 4) +
+            (hash << 7) +
+            (hash << 8) +
+            (hash << 24);
+    }
+    return (hash >>> 0).toString(16);
+}
+
+function getReportGenerationFingerprint(student) {
+    const payload = {
+        student: stableValue(student),
+        subjects: stableValue(schoolSubjects),
+        settings: stableValue(reportSettings),
+        website: WEBSITE_ID
+    };
+
+    return simpleHash(JSON.stringify(payload));
+}
+
+function migrateLegacyGeneratedReportsToLedger() {
+    if (!reportContainer || !students || students.length === 0) return;
+
+    const visibleText = reportContainer.textContent || "";
+    const fingerprints = [];
+
+    students.forEach(function (student) {
+        const name = String(student["Student Name"] || "").trim();
+        const admissionNo = String(student["Admission No"] || "").trim();
+
+        if (!name) return;
+
+        if (
+            visibleText.includes(name) &&
+            (!admissionNo || visibleText.includes(admissionNo))
+        ) {
+            fingerprints.push(
+                getReportGenerationFingerprint(student)
+            );
+        }
+    });
+
+    if (fingerprints.length > 0) {
+        markReportsAsGenerated(fingerprints);
+    }
+}
+
+function hasReportBeenGenerated(fingerprint) {
+    const ledger = getGenerationLedger();
+    const scope = getCurrentSubscriptionScope();
+    return !!(ledger[scope] && ledger[scope][fingerprint]);
+}
+
+function markReportsAsGenerated(fingerprints) {
+    if (!Array.isArray(fingerprints) || fingerprints.length === 0) return;
+
+    const ledger = getGenerationLedger();
+    const scope = getCurrentSubscriptionScope();
+
+    if (!ledger[scope]) ledger[scope] = {};
+
+    fingerprints.forEach(function (fingerprint) {
+        if (fingerprint) ledger[scope][fingerprint] = Date.now();
+    });
+
+    /* Keep the local ledger small. */
+    const keys = Object.keys(ledger);
+    if (keys.length > 8) {
+        keys.sort(function (a, b) {
+            const aTime = Math.max.apply(null, Object.values(ledger[a] || {}).map(Number).concat([0]));
+            const bTime = Math.max.apply(null, Object.values(ledger[b] || {}).map(Number).concat([0]));
+            return bTime - aTime;
+        });
+        keys.slice(8).forEach(function (key) { delete ledger[key]; });
+    }
+
+    saveGenerationLedger(ledger);
+}
 
 
 /* =========================================================
@@ -283,55 +430,34 @@ function restoreAppData() {
 
 
 /* =========================================================
-   GENERATED REPORT TRACKING
-   ========================================================= */
-
-function getStudentReportKey(student) {
-
-    if (!student) return "";
-
-    return [
-        student["Admission No"],
-        student["Student Name"],
-        student["Class"],
-        student["Term"],
-        student["Session"]
-    ].map(function (value) {
-        return String(value == null ? "" : value)
-            .trim()
-            .toLowerCase();
-    }).join("|");
-}
-
-
-/* =========================================================
    SAVE GENERATED REPORTS
    ========================================================= */
 
 function saveGeneratedReports() {
 
-    if (!reportContainer) return;
+    if (!reportContainer) {
+        return;
+    }
 
     try {
-        localStorage.setItem(
-            GENERATED_REPORTS_STORAGE_KEY,
-            reportContainer.innerHTML
-        );
+
+        const reportsHTML =
+            reportContainer.innerHTML;
 
         localStorage.setItem(
-            GENERATED_REPORTS_META_STORAGE_KEY,
-            JSON.stringify({
-                generatedReportKeys: generatedReportKeys,
-                savedAt: Date.now()
-            })
+            GENERATED_REPORTS_STORAGE_KEY,
+            reportsHTML
         );
 
     } catch (error) {
+
         console.error(
             "Unable to save generated reports:",
             error
         );
+
     }
+
 }
 
 
@@ -341,47 +467,40 @@ function saveGeneratedReports() {
 
 function restoreGeneratedReports() {
 
-    if (!reportContainer) return;
+    if (!reportContainer) {
+        return;
+    }
 
     try {
+
         const savedReports =
             localStorage.getItem(
                 GENERATED_REPORTS_STORAGE_KEY
             );
 
-        const savedMeta =
-            localStorage.getItem(
-                GENERATED_REPORTS_META_STORAGE_KEY
-            );
+        if (
+            savedReports &&
+            savedReports.trim() !== ""
+        ) {
 
-        if (savedMeta) {
-            const parsedMeta = JSON.parse(savedMeta);
+            reportContainer.innerHTML =
+                savedReports;
 
-            if (
-                parsedMeta &&
-                Array.isArray(parsedMeta.generatedReportKeys)
-            ) {
-                generatedReportKeys =
-                    parsedMeta.generatedReportKeys.filter(function (key) {
-                        return String(key).trim() !== "";
-                    });
-            }
-        }
+            /* Migrate reports generated by the previous version so
+               an already-paid report is not charged again. */
+            migrateLegacyGeneratedReportsToLedger();
 
-        if (savedReports && savedReports.trim() !== "") {
-            reportContainer.innerHTML = savedReports;
-
-            if (reportSection) {
-                reportSection.style.display = "block";
-            }
         }
 
     } catch (error) {
+
         console.error(
             "Unable to restore generated reports:",
             error
         );
+
     }
+
 }
 
 
@@ -391,23 +510,21 @@ function restoreGeneratedReports() {
 
 function clearGeneratedReports() {
 
-    generatedReportKeys = [];
-
     try {
+
         localStorage.removeItem(
             GENERATED_REPORTS_STORAGE_KEY
         );
 
-        localStorage.removeItem(
-            GENERATED_REPORTS_META_STORAGE_KEY
-        );
-
     } catch (error) {
+
         console.error(
             "Unable to clear generated reports:",
             error
         );
+
     }
+
 }
 
 
@@ -1977,9 +2094,6 @@ currentSubscription =
 
 
             showApp();
-
-            /* Restore again after the asynchronous subscription check. */
-            restoreGeneratedReports();
 
             updateReportStatus();
 
@@ -5015,11 +5129,17 @@ function attachBehaviorData(
                             row[
                                 "Class Teacher's Comment"
                             ] ||
+                            row[
+                                "Class Teacher's Comment/Sign"
+                            ] ||
                             "",
 
                         "Principal's Comment":
                             row[
                                 "Principal's Comment"
+                            ] ||
+                            row[
+                                "Principal's Comment/Sign"
                             ] ||
                             ""
 
@@ -5652,37 +5772,37 @@ async function generateSingleReport() {
     const student = students[Number(index)];
     if (!student) return;
 
-    const studentKey = getStudentReportKey(student);
+    const fingerprint = getReportGenerationFingerprint(student);
+    const alreadyGenerated = hasReportBeenGenerated(fingerprint);
 
-    /* Already generated: display it again WITHOUT charging. */
-    if (studentKey && generatedReportKeys.includes(studentKey)) {
-        if (reportContainer) {
-            reportContainer.innerHTML = createReport(student);
-            reportContainer.scrollIntoView({ behavior: "smooth" });
-        }
-        saveGeneratedReports();
-        return;
-    }
-
-    if (!canGenerateReports(1)) return;
+    /* Only a genuinely new version of this report consumes allowance. */
+    if (!alreadyGenerated && !canGenerateReports(1)) return;
 
     const report = createReport(student);
 
     if (reportContainer) {
         reportContainer.innerHTML = report;
-
-        if (studentKey) {
-            generatedReportKeys.push(studentKey);
-        }
-
         saveGeneratedReports();
-
-        reportContainer.scrollIntoView({
-            behavior: "smooth"
-        });
+        reportContainer.scrollIntoView({ behavior: "smooth" });
     }
 
-    await incrementReportCount(1);
+    if (alreadyGenerated) {
+        updateReportStatus();
+        return;
+    }
+
+    const countUpdated = await incrementReportCount(1);
+
+    if (countUpdated) {
+        markReportsAsGenerated([fingerprint]);
+        saveGeneratedReports();
+    } else {
+        alert(
+            "⚠️ The report was displayed, but the server could not update the usage count. Please refresh and check your subscription before generating another new report."
+        );
+    }
+
+    updateReportStatus();
 }
 
 
@@ -5705,39 +5825,28 @@ async function generateAllReports() {
 
     const carriedOver = getCarriedOverReports();
     const totalAvailable = limit + carriedOver;
-    const remaining = Math.max(
-        totalAvailable - reportsGenerated,
-        0
-    );
+    const remaining = Math.max(totalAvailable - reportsGenerated, 0);
 
-    const studentsNeedingReports = students.filter(function (student) {
-        const key = getStudentReportKey(student);
-        return !key || !generatedReportKeys.includes(key);
+    /*
+       Generate All is deliberately mode-independent. Reports that were
+       already charged in Generate Student mode are not charged again,
+       and vice versa.
+    */
+    const reportItems = students.map(function (student) {
+        return {
+            student: student,
+            fingerprint: getReportGenerationFingerprint(student),
+            alreadyGenerated: hasReportBeenGenerated(
+                getReportGenerationFingerprint(student)
+            )
+        };
     });
 
-    if (studentsNeedingReports.length === 0) {
-        if (reportContainer) {
-            reportContainer.innerHTML = "";
+    const newItems = reportItems.filter(function (item) {
+        return !item.alreadyGenerated;
+    });
 
-            students.forEach(function (student) {
-                if (generatedReportKeys.includes(getStudentReportKey(student))) {
-                    reportContainer.insertAdjacentHTML(
-                        "beforeend",
-                        createReport(student)
-                    );
-                }
-            });
-
-            reportContainer.scrollIntoView({ behavior: "smooth" });
-        }
-
-        saveGeneratedReports();
-        updateReportStatus();
-        alert("ℹ️ These student reports have already been generated.\n\nNo additional report allowance was used.");
-        return;
-    }
-
-    if (remaining <= 0) {
+    if (remaining <= 0 && newItems.length > 0) {
         alert(
             "⚠️ REPORT GENERATION LIMIT REACHED\n\n" +
             "Subscription: " + getPlanDisplayName() + "\n" +
@@ -5748,55 +5857,56 @@ async function generateAllReports() {
         return;
     }
 
-    const numberToGenerate = Math.min(
-        studentsNeedingReports.length,
-        remaining
-    );
-
-    const stoppedByLimit =
-        studentsNeedingReports.length > remaining;
+    const newItemsAllowed = newItems.slice(0, remaining);
+    const blockedNewItems = newItems.length > newItemsAllowed.length;
 
     const confirmation = confirm(
-        "Generate reports for " + numberToGenerate + " student(s)?\n\n" +
+        "Generate reports for " + students.length + " student(s)?\n\n" +
         "Subscription: " + getPlanDisplayName() + "\n" +
         "Current reports generated: " + reportsGenerated + " / " + totalAvailable + "\n" +
         "Carried-over reports: " + carriedOver + "\n" +
         "Reports remaining: " + remaining +
-        (stoppedByLimit
-            ? "\n\n⚠️ Your available balance means only " + numberToGenerate + " report(s) can be generated."
+        "\n\nAlready-generated reports will not consume allowance again." +
+        (blockedNewItems
+            ? "\n\n⚠️ Only " + newItemsAllowed.length + " new report(s) can consume the remaining allowance."
             : "")
     );
 
-    if (!confirmation || !canGenerateReports(numberToGenerate)) return;
+    if (!confirmation) return;
 
-    if (reportContainer) {
-        reportContainer.innerHTML = "";
-    }
+    if (reportContainer) reportContainer.innerHTML = "";
 
-    let generatedCount = 0;
+    const allowedNewFingerprints = new Set(
+        newItemsAllowed.map(function (item) { return item.fingerprint; })
+    );
 
-    for (let i = 0; i < numberToGenerate; i++) {
-        const student = studentsNeedingReports[i];
-        if (!student) continue;
+    const fingerprintsToCharge = [];
+    let renderedCount = 0;
 
+    for (let i = 0; i < reportItems.length; i++) {
+        const item = reportItems[i];
+
+        /* Existing reports are safe to render again without charging.
+           New reports are rendered only when allowance is available. */
+        if (!item.alreadyGenerated && !allowedNewFingerprints.has(item.fingerprint)) {
+            continue;
+        }
+
+        const report = createReport(item.student);
         if (reportContainer) {
-            reportContainer.insertAdjacentHTML(
-                "beforeend",
-                createReport(student)
-            );
+            reportContainer.insertAdjacentHTML("beforeend", report);
         }
 
-        const key = getStudentReportKey(student);
-        if (key && !generatedReportKeys.includes(key)) {
-            generatedReportKeys.push(key);
+        renderedCount++;
+
+        if (!item.alreadyGenerated) {
+            fingerprintsToCharge.push(item.fingerprint);
         }
 
-        generatedCount++;
-
-        if (generatedCount % 10 === 0) {
+        if (renderedCount % 10 === 0) {
             updateTemporaryGenerationMessage(
-                generatedCount,
-                numberToGenerate
+                renderedCount,
+                students.length
             );
 
             await new Promise(function (resolve) {
@@ -5805,47 +5915,127 @@ async function generateAllReports() {
         }
     }
 
-    const generationProgress =
-        document.getElementById("generationProgress");
-
+    const generationProgress = document.getElementById("generationProgress");
     if (generationProgress) generationProgress.remove();
 
-    if (generatedCount > 0) {
-        saveGeneratedReports();
+    if (reportContainer) saveGeneratedReports();
 
-        const countUpdated =
-            await incrementReportCount(generatedCount);
+    if (fingerprintsToCharge.length > 0) {
+        const countUpdated = await incrementReportCount(
+            fingerprintsToCharge.length
+        );
 
-        if (!countUpdated) {
-            console.error(
-                "The reports were generated locally, but the server could not update the report count."
-            );
+        if (countUpdated) {
+            markReportsAsGenerated(fingerprintsToCharge);
+            saveGeneratedReports();
+        } else {
             alert(
-                "⚠️ Reports were generated, but the server could not update the usage count. Please refresh and check your subscription status before generating more reports."
+                "⚠️ Reports were displayed, but the server could not update the usage count. Please refresh and check your subscription before generating more reports."
             );
         }
     }
 
     updateReportStatus();
 
-    if (stoppedByLimit) {
+    if (blockedNewItems) {
         alert(
             "⚠️ Generation stopped at your available report limit.\n\n" +
-            "Subscription: " + getPlanDisplayName() + "\n" +
-            "Reports generated this operation: " + generatedCount + "\n" +
-            "Total reports generated: " + reportsGenerated + " / " + totalAvailable +
-            "\n\nThere were " +
-            (studentsNeedingReports.length - numberToGenerate) +
-            " student(s) remaining."
+            "New reports charged this operation: " + fingerprintsToCharge.length + "\n" +
+            "Reports generated: " + reportsGenerated + " / " + totalAvailable + "\n\n" +
+            "Renew or upgrade to generate the remaining new reports."
         );
     } else {
         alert(
-            "✅ New reports generated successfully.\n\n" +
-            "Reports generated: " + generatedCount + "\n" +
+            "✅ Reports generated successfully.\n\n" +
+            "Reports displayed: " + renderedCount + "\n" +
+            "New reports charged: " + fingerprintsToCharge.length + "\n" +
             "Total reports generated: " + reportsGenerated + " / " + totalAvailable
         );
     }
 }
+
+
+function updateTemporaryGenerationMessage(
+    generated,
+    total
+) {
+
+    if (!reportContainer) {
+
+        return;
+
+    }
+
+
+    const existing =
+        document.getElementById(
+            "generationProgress"
+        );
+
+
+    if (!existing) {
+
+        const progress =
+            document.createElement(
+                "div"
+            );
+
+
+        progress.id =
+            "generationProgress";
+
+
+        progress.style.padding =
+            "10px";
+
+
+        progress.style.marginBottom =
+            "10px";
+
+
+        progress.style.fontWeight =
+            "bold";
+
+
+        progress.innerHTML =
+
+            "⏳ Generating reports: " +
+
+            generated +
+
+            " / " +
+
+            total;
+
+
+        /* Keep progress OUTSIDE the generated report markup.
+           Putting it inside reportContainer makes it become the
+           first report and causes it to print on the first page. */
+        if (reportSection && reportContainer.parentElement === reportSection) {
+            reportSection.insertBefore(progress, reportContainer);
+        } else if (reportSection) {
+            reportSection.insertBefore(progress, reportContainer);
+        } else {
+            reportContainer.parentElement?.insertBefore(progress, reportContainer);
+        }
+
+
+    } else {
+
+        existing.innerHTML =
+
+            "⏳ Generating reports: " +
+
+            generated +
+
+            " / " +
+
+            total;
+
+    }
+
+}
+
 
 /* =========================================================
    CREATE REPORT
@@ -6008,30 +6198,37 @@ function createReport(student) {
        ===================================================== */
 
     return `
-        <article class="report">
+        <article class="report" data-report-fingerprint="${escapeHTML(getReportGenerationFingerprint(student))}">
 
             <div class="report-top-accent"></div>
 
-            <header class="school-header">
-                <div class="school-logo-container">
+            <header class="school-header" style="position:relative;width:100%;display:block;text-align:center!important;">
+                <div class="school-brand" style="position:relative;width:100%!important;display:block!important;text-align:center!important;">
                     ${
                         reportSettings.schoolLogo
                             ? `
-                                <img
-                                    src="${reportSettings.schoolLogo}"
-                                    alt="School Logo"
-                                    class="school-logo"
-                                >
+                                <div class="school-logo-container" style="position:absolute!important;left:0!important;top:50%!important;transform:translateY(-50%)!important;margin:0!important;">
+                                    <img
+                                        src="${reportSettings.schoolLogo}"
+                                        alt="School Logo"
+                                        class="school-logo"
+                                    >
+                                </div>
                               `
-                            : ""
+                            : `
+                                <div class="school-logo-container school-logo-placeholder" style="position:absolute!important;left:0!important;top:50%!important;transform:translateY(-50%)!important;margin:0!important;">
+                                    <span>SR</span>
+                                </div>
+                              `
                     }
+
+                    <div class="school-heading" style="width:100%!important;max-width:none!important;text-align:center!important;margin:0 auto!important;display:block!important;padding:0!important;">
+                        <h1 style="display:block!important;width:100%!important;text-align:center!important;margin:0 auto!important;font-size:26px!important;font-weight:800!important;line-height:1.15!important;letter-spacing:0.5px!important;">${escapeHTML(reportSettings.schoolName)}</h1>
+                        <p style="display:block!important;width:100%!important;text-align:center!important;margin:5px auto 0!important;font-size:14px!important;font-weight:600!important;line-height:1.25!important;letter-spacing:0.3px!important;">${escapeHTML(reportSettings.schoolAddress)}</p>
+                        <div class="report-title" style="display:block!important;width:100%!important;text-align:center!important;margin:8px auto 0!important;font-size:16px!important;font-weight:800!important;line-height:1.2!important;letter-spacing:1.2px!important;">STUDENT ACADEMIC REPORT</div>
+                    </div>
                 </div>
 
-                <div class="school-heading">
-                    <h1>${escapeHTML(reportSettings.schoolName)}</h1>
-                    <p>${escapeHTML(reportSettings.schoolAddress)}</p>
-                    <div class="report-title">STUDENT ACADEMIC REPORT</div>
-                </div>
             </header>
 
             <section class="student-profile">
@@ -6044,10 +6241,6 @@ function createReport(student) {
                 </div>
 
                 <div class="student-info">
-                    <div class="student-info-row term-session-row">
-                        <div class="info-item"><strong>TERM:</strong> ${escapeHTML(term)}</div>
-                        <div class="info-item"><strong>SESSION:</strong> ${escapeHTML(session)}</div>
-                    </div>
                     <div class="info-item info-name">
                         <span class="info-label">Student Name</span>
                         <strong>${escapeHTML(studentName)}</strong>
@@ -6076,6 +6269,16 @@ function createReport(student) {
                     <div class="info-item">
                         <span class="info-label">Class Size</span>
                         <strong>${classSize}</strong>
+                    </div>
+
+                    <div class="info-item">
+                        <span class="info-label">Term</span>
+                        <strong>${escapeHTML(term)}</strong>
+                    </div>
+
+                    <div class="info-item">
+                        <span class="info-label">Session</span>
+                        <strong>${escapeHTML(session)}</strong>
                     </div>
                 </div>
             </section>
@@ -6181,7 +6384,7 @@ function createReport(student) {
 
                 <div class="comment-grid">
                     <div class="comment-card">
-                        <div class="comment-label">CLASS TEACHER'S COMMENT & SIGNATURE</div>
+                        <div class="comment-label">CLASS TEACHER'S COMMENT</div>
                         <div class="comment-box">${escapeHTML(teacherComment)}</div>
                         <div class="signature-line">
                             <span>Class Teacher</span>
@@ -6190,7 +6393,7 @@ function createReport(student) {
                     </div>
 
                     <div class="comment-card">
-                        <div class="comment-label">PRINCIPAL'S COMMENT & SIGNATURE</div>
+                        <div class="comment-label">PRINCIPAL'S COMMENT</div>
                         <div class="comment-box">${escapeHTML(principalComment)}</div>
                         <div class="signature-line">
                             <span>Principal</span>
@@ -6759,7 +6962,7 @@ async function verifyPaystackPayment(
             await supabaseClient
                 .functions
                 .invoke(
-                    "paystack-verification",
+                    "verify-paystack-payment-websites",
                     {
 
                         body: {
