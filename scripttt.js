@@ -88,6 +88,11 @@ const REPORT_SETTINGS_STORAGE_KEY =
 const GENERATED_REPORTS_STORAGE_KEY =
     "studentReportGeneratorGeneratedReports";
 
+const GENERATED_REPORTS_META_STORAGE_KEY =
+    "studentReportGeneratorGeneratedReportsMeta";
+
+let generatedReportKeys = [];
+
 
 /* =========================================================
    SAVE APP DATA
@@ -278,34 +283,55 @@ function restoreAppData() {
 
 
 /* =========================================================
+   GENERATED REPORT TRACKING
+   ========================================================= */
+
+function getStudentReportKey(student) {
+
+    if (!student) return "";
+
+    return [
+        student["Admission No"],
+        student["Student Name"],
+        student["Class"],
+        student["Term"],
+        student["Session"]
+    ].map(function (value) {
+        return String(value == null ? "" : value)
+            .trim()
+            .toLowerCase();
+    }).join("|");
+}
+
+
+/* =========================================================
    SAVE GENERATED REPORTS
    ========================================================= */
 
 function saveGeneratedReports() {
 
-    if (!reportContainer) {
-        return;
-    }
+    if (!reportContainer) return;
 
     try {
-
-        const reportsHTML =
-            reportContainer.innerHTML;
-
         localStorage.setItem(
             GENERATED_REPORTS_STORAGE_KEY,
-            reportsHTML
+            reportContainer.innerHTML
+        );
+
+        localStorage.setItem(
+            GENERATED_REPORTS_META_STORAGE_KEY,
+            JSON.stringify({
+                generatedReportKeys: generatedReportKeys,
+                savedAt: Date.now()
+            })
         );
 
     } catch (error) {
-
         console.error(
             "Unable to save generated reports:",
             error
         );
-
     }
-
 }
 
 
@@ -315,36 +341,47 @@ function saveGeneratedReports() {
 
 function restoreGeneratedReports() {
 
-    if (!reportContainer) {
-        return;
-    }
+    if (!reportContainer) return;
 
     try {
-
         const savedReports =
             localStorage.getItem(
                 GENERATED_REPORTS_STORAGE_KEY
             );
 
-        if (
-            savedReports &&
-            savedReports.trim() !== ""
-        ) {
+        const savedMeta =
+            localStorage.getItem(
+                GENERATED_REPORTS_META_STORAGE_KEY
+            );
 
-            reportContainer.innerHTML =
-                savedReports;
+        if (savedMeta) {
+            const parsedMeta = JSON.parse(savedMeta);
 
+            if (
+                parsedMeta &&
+                Array.isArray(parsedMeta.generatedReportKeys)
+            ) {
+                generatedReportKeys =
+                    parsedMeta.generatedReportKeys.filter(function (key) {
+                        return String(key).trim() !== "";
+                    });
+            }
+        }
+
+        if (savedReports && savedReports.trim() !== "") {
+            reportContainer.innerHTML = savedReports;
+
+            if (reportSection) {
+                reportSection.style.display = "block";
+            }
         }
 
     } catch (error) {
-
         console.error(
             "Unable to restore generated reports:",
             error
         );
-
     }
-
 }
 
 
@@ -354,21 +391,23 @@ function restoreGeneratedReports() {
 
 function clearGeneratedReports() {
 
-    try {
+    generatedReportKeys = [];
 
+    try {
         localStorage.removeItem(
             GENERATED_REPORTS_STORAGE_KEY
         );
 
-    } catch (error) {
+        localStorage.removeItem(
+            GENERATED_REPORTS_META_STORAGE_KEY
+        );
 
+    } catch (error) {
         console.error(
             "Unable to clear generated reports:",
             error
         );
-
     }
-
 }
 
 
@@ -1938,6 +1977,9 @@ currentSubscription =
 
 
             showApp();
+
+            /* Restore again after the asynchronous subscription check. */
+            restoreGeneratedReports();
 
             updateReportStatus();
 
@@ -4986,7 +5028,7 @@ function attachBehaviorData(
 
             }
 
-        } 
+        }
     );
 
 
@@ -5598,93 +5640,49 @@ async function incrementReportCount(
 
 async function generateSingleReport() {
 
-    if (
-        !elementExists(
-            studentSelect
-        )
-    ) {
+    if (!elementExists(studentSelect)) return;
 
+    const index = studentSelect.value;
+
+    if (index === "") {
+        alert("Please select a student.");
         return;
-
     }
 
+    const student = students[Number(index)];
+    if (!student) return;
 
-    const index =
-        studentSelect.value;
+    const studentKey = getStudentReportKey(student);
 
-
-    if (
-        index === ""
-    ) {
-
-        alert(
-            "Please select a student."
-        );
-
+    /* Already generated: display it again WITHOUT charging. */
+    if (studentKey && generatedReportKeys.includes(studentKey)) {
+        if (reportContainer) {
+            reportContainer.innerHTML = createReport(student);
+            reportContainer.scrollIntoView({ behavior: "smooth" });
+        }
+        saveGeneratedReports();
         return;
-
     }
 
+    if (!canGenerateReports(1)) return;
 
-    const student =
-        students[
-            Number(index)
-        ];
-
-
-    if (!student) {
-
-        return;
-
-    }
-
-
-    /* =========================
-       CHECK REPORT LIMIT
-       ========================= */
-
-    if (
-        !canGenerateReports(1)
-    ) {
-
-        return;
-
-    }
-
-
-    const report =
-        createReport(
-            student
-        );
-
+    const report = createReport(student);
 
     if (reportContainer) {
+        reportContainer.innerHTML = report;
 
-        reportContainer.innerHTML =
-            report;
-
-
-        /* =========================
-           SAVE GENERATED REPORT
-           ========================= */
+        if (studentKey) {
+            generatedReportKeys.push(studentKey);
+        }
 
         saveGeneratedReports();
 
-
         reportContainer.scrollIntoView({
-
-            behavior:
-                "smooth"
-
+            behavior: "smooth"
         });
-
     }
 
-
-    await incrementReportCount(
-        1
-    );
-
+    await incrementReportCount(1);
 }
 
 
@@ -5705,13 +5703,39 @@ async function generateAllReports() {
         return;
     }
 
-    /* INCLUDE CARRIED-OVER REPORTS */
     const carriedOver = getCarriedOverReports();
     const totalAvailable = limit + carriedOver;
     const remaining = Math.max(
         totalAvailable - reportsGenerated,
         0
     );
+
+    const studentsNeedingReports = students.filter(function (student) {
+        const key = getStudentReportKey(student);
+        return !key || !generatedReportKeys.includes(key);
+    });
+
+    if (studentsNeedingReports.length === 0) {
+        if (reportContainer) {
+            reportContainer.innerHTML = "";
+
+            students.forEach(function (student) {
+                if (generatedReportKeys.includes(getStudentReportKey(student))) {
+                    reportContainer.insertAdjacentHTML(
+                        "beforeend",
+                        createReport(student)
+                    );
+                }
+            });
+
+            reportContainer.scrollIntoView({ behavior: "smooth" });
+        }
+
+        saveGeneratedReports();
+        updateReportStatus();
+        alert("ℹ️ These student reports have already been generated.\n\nNo additional report allowance was used.");
+        return;
+    }
 
     if (remaining <= 0) {
         alert(
@@ -5724,9 +5748,13 @@ async function generateAllReports() {
         return;
     }
 
-    const totalStudents = students.length;
-    const numberToGenerate = Math.min(totalStudents, remaining);
-    const stoppedByLimit = totalStudents > remaining;
+    const numberToGenerate = Math.min(
+        studentsNeedingReports.length,
+        remaining
+    );
+
+    const stoppedByLimit =
+        studentsNeedingReports.length > remaining;
 
     const confirmation = confirm(
         "Generate reports for " + numberToGenerate + " student(s)?\n\n" +
@@ -5739,9 +5767,7 @@ async function generateAllReports() {
             : "")
     );
 
-    if (!confirmation || !canGenerateReports(numberToGenerate)) {
-        return;
-    }
+    if (!confirmation || !canGenerateReports(numberToGenerate)) return;
 
     if (reportContainer) {
         reportContainer.innerHTML = "";
@@ -5750,12 +5776,19 @@ async function generateAllReports() {
     let generatedCount = 0;
 
     for (let i = 0; i < numberToGenerate; i++) {
-        const student = students[i];
+        const student = studentsNeedingReports[i];
         if (!student) continue;
 
-        const report = createReport(student);
         if (reportContainer) {
-            reportContainer.insertAdjacentHTML("beforeend", report);
+            reportContainer.insertAdjacentHTML(
+                "beforeend",
+                createReport(student)
+            );
+        }
+
+        const key = getStudentReportKey(student);
+        if (key && !generatedReportKeys.includes(key)) {
+            generatedReportKeys.push(key);
         }
 
         generatedCount++;
@@ -5772,13 +5805,17 @@ async function generateAllReports() {
         }
     }
 
-    const generationProgress = document.getElementById("generationProgress");
+    const generationProgress =
+        document.getElementById("generationProgress");
+
     if (generationProgress) generationProgress.remove();
 
     if (generatedCount > 0) {
         saveGeneratedReports();
 
-        const countUpdated = await incrementReportCount(generatedCount);
+        const countUpdated =
+            await incrementReportCount(generatedCount);
+
         if (!countUpdated) {
             console.error(
                 "The reports were generated locally, but the server could not update the report count."
@@ -5796,100 +5833,19 @@ async function generateAllReports() {
             "⚠️ Generation stopped at your available report limit.\n\n" +
             "Subscription: " + getPlanDisplayName() + "\n" +
             "Reports generated this operation: " + generatedCount + "\n" +
-            "Total reports generated: " + reportsGenerated + " / " + totalAvailable + "\n\n" +
-            "There were " + (totalStudents - numberToGenerate) + " student(s) remaining."
+            "Total reports generated: " + reportsGenerated + " / " + totalAvailable +
+            "\n\nThere were " +
+            (studentsNeedingReports.length - numberToGenerate) +
+            " student(s) remaining."
         );
     } else {
         alert(
-            "✅ All reports generated successfully.\n\n" +
+            "✅ New reports generated successfully.\n\n" +
             "Reports generated: " + generatedCount + "\n" +
             "Total reports generated: " + reportsGenerated + " / " + totalAvailable
         );
     }
 }
-
-
-function updateTemporaryGenerationMessage(
-    generated,
-    total
-) {
-
-    if (!reportContainer) {
-
-        return;
-
-    }
-
-
-    const existing =
-        document.getElementById(
-            "generationProgress"
-        );
-
-
-    if (!existing) {
-
-        const progress =
-            document.createElement(
-                "div"
-            );
-
-
-        progress.id =
-            "generationProgress";
-
-
-        progress.style.padding =
-            "10px";
-
-
-        progress.style.marginBottom =
-            "10px";
-
-
-        progress.style.fontWeight =
-            "bold";
-
-
-        progress.innerHTML =
-
-            "⏳ Generating reports: " +
-
-            generated +
-
-            " / " +
-
-            total;
-
-
-        /* Keep progress OUTSIDE the generated report markup.
-           Putting it inside reportContainer makes it become the
-           first report and causes it to print on the first page. */
-        if (reportSection && reportContainer.parentElement === reportSection) {
-            reportSection.insertBefore(progress, reportContainer);
-        } else if (reportSection) {
-            reportSection.insertBefore(progress, reportContainer);
-        } else {
-            reportContainer.parentElement?.insertBefore(progress, reportContainer);
-        }
-
-
-    } else {
-
-        existing.innerHTML =
-
-            "⏳ Generating reports: " +
-
-            generated +
-
-            " / " +
-
-            total;
-
-    }
-
-}
-
 
 /* =========================================================
    CREATE REPORT
