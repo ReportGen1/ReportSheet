@@ -5619,8 +5619,11 @@ async function incrementReportCount(
         } =
             await supabaseClient
                 .rpc(
-    "increment_reports_generated_for_website",
+    "claim_report_allowance",
     {
+
+        p_user_id:
+            currentUserId,
 
         p_website_id:
             WEBSITE_ID,
