@@ -8,6 +8,8 @@
 
    The server-side renewal must store that value in the NEW row as
    carried_over_reports and reset reports_generated to 0.
+   (Confirm the paystack-verification Edge Function itself uses
+   these exact column names too - it was not part of this file.)
 
    Example: old limit 100, old usage 35 -> 65 carried over; new
    Standard limit 500 -> 565 total available.
@@ -4197,7 +4199,7 @@ function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,2,FALSE),""))`
+                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,2,FALSE),"N/A"))`
 
                     };
 
@@ -4210,7 +4212,7 @@ function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,3,FALSE),""))`
+                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,3,FALSE),"N/A"))`
 
                     };
 
@@ -4223,7 +4225,7 @@ function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,4,FALSE),""))`
+                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,4,FALSE),"N/A"))`
 
                     };
 
@@ -4315,6 +4317,15 @@ function downloadExcelTemplate() {
             };
 
 
+            /* =============================================
+               A subject that a student does not offer is
+               marked "N/A" (see VLOOKUP fallback above)
+               instead of being averaged in. Each not-offered
+               subject produces 3 "N/A" cells across its
+               1st CA / 2nd CA / Exams columns, so dividing
+               that count by 3 gives the number of subjects
+               to exclude from the denominator.
+               ============================================= */
             scoresSheet[
                 averageLetter +
                 row
@@ -4323,7 +4334,7 @@ function downloadExcelTemplate() {
                 t: "n",
 
                 f:
-                    `IF($B${row}="","",IFERROR(${overallTotalLetter}${row}/${schoolSubjects.length},0))`
+                    `IF($B${row}="","",IFERROR(${overallTotalLetter}${row}/(${schoolSubjects.length}-COUNTIF(${firstSubjectLetter}${row}:${lastSubjectLetter}${row},"N/A")/3),0))`
 
             };
 
@@ -5130,7 +5141,7 @@ function attachBehaviorData(
                                 "Class Teacher's Comment"
                             ] ||
                             row[
-                                "Class Teacher's Comment/Sign"
+                                "Class Teacher's Comment"
                             ] ||
                             "",
 
@@ -5139,7 +5150,7 @@ function attachBehaviorData(
                                 "Principal's Comment"
                             ] ||
                             row[
-                                "Principal's Comment/Sign"
+                                "Principal's Comment"
                             ] ||
                             ""
 
@@ -5513,7 +5524,18 @@ function updateReportStatus() {
 
 
 /* =========================================================
-   CAN GENERATE REPORTS
+   CAN GENERATE REPORTS (CLIENT-SIDE PRE-CHECK ONLY)
+
+   This is a fast, local check used purely for UX: it lets the
+   UI show a clear message immediately instead of waiting on a
+   network round trip when the user is obviously out of reports.
+
+   It is NOT the security boundary. The real, authoritative
+   check happens server-side inside claimReportAllowance(), via
+   the "claim_report_allowance" Postgres function, which locks
+   the subscription row and only increments reports_generated if
+   allowance genuinely remains. A report must never be built or
+   displayed until that server call has succeeded.
    ========================================================= */
 
 function canGenerateReports(
@@ -5653,12 +5675,41 @@ function canGenerateReports(
 
 }
 /* =========================================================
-   INCREMENT REPORT COUNT SECURELY
+   CLAIM REPORT ALLOWANCE (SERVER-AUTHORITATIVE)
+
+   This replaces the old "build report, then increment count"
+   flow. It must be called and must succeed BEFORE a report is
+   built or shown to the user - it is the actual permission
+   check, not just a usage log.
+
+   It calls the "claim_report_allowance" Postgres function
+   (see the accompanying SQL migration), which:
+     - locks the caller's subscription row (FOR UPDATE), so two
+       concurrent requests (two tabs, a double-click) can't both
+       pass the check before either one increments,
+     - works out the real limit + carried-over reports on the
+       server, independent of anything the client claims,
+     - only increments reports_generated by however much
+       allowance actually remains, and
+     - returns how much was actually claimed, so a batch request
+       can be partially granted instead of all-or-nothing.
+
+   Returns:
+     { success, claimedAmount, reportsGenerated, remaining }
+   claimedAmount may be less than the amount requested (or 0)
+   if less allowance remains than was asked for.
    ========================================================= */
 
-async function incrementReportCount(
+async function claimReportAllowance(
     amount
 ) {
+
+    const failure = {
+        success: false,
+        claimedAmount: 0,
+        reportsGenerated: reportsGenerated,
+        remaining: 0
+    };
 
     if (!currentUserId) {
 
@@ -5666,22 +5717,22 @@ async function incrementReportCount(
             "No authenticated user found."
         );
 
-        return false;
+        return failure;
 
     }
 
 
-    const reportAmount =
+    const requestedAmount =
         Number(amount);
 
 
     if (
 
         !Number.isInteger(
-            reportAmount
+            requestedAmount
         ) ||
 
-        reportAmount <=
+        requestedAmount <=
         0
 
     ) {
@@ -5691,7 +5742,7 @@ async function incrementReportCount(
             amount
         );
 
-        return false;
+        return failure;
 
     }
 
@@ -5704,14 +5755,17 @@ async function incrementReportCount(
         } =
             await supabaseClient
                 .rpc(
-    "increment_reports_generated_for_website",
+    "claim_report_allowance",
     {
+
+        p_user_id:
+            currentUserId,
 
         p_website_id:
             WEBSITE_ID,
 
         p_amount:
-            reportAmount
+            requestedAmount
 
     }
 );
@@ -5719,35 +5773,64 @@ async function incrementReportCount(
         if (error) {
 
             console.error(
-                "Unable to increment report count:",
+                "Unable to claim report allowance:",
                 error
             );
 
-            return false;
+            return failure;
+
+        }
+
+
+        /* The Postgres function returns a single-row table. */
+        const result =
+            Array.isArray(data)
+                ? data[0]
+                : data;
+
+        if (!result) {
+
+            console.error(
+                "Empty response from claim_report_allowance."
+            );
+
+            return failure;
 
         }
 
 
         reportsGenerated =
-            Number(data) ||
-            reportsGenerated +
-            reportAmount;
+            Number(
+                result.reports_generated
+            ) || reportsGenerated;
+
+        if (currentSubscription) {
+
+            currentSubscription.reports_generated =
+                reportsGenerated;
+
+        }
 
 
         updateReportStatus();
 
 
-        return true;
+        return {
+            success: !!result.success,
+            claimedAmount: Number(result.claimed_amount) || 0,
+            reportsGenerated: reportsGenerated,
+            remaining: Number(result.remaining) || 0
+        };
 
 
     } catch (error) {
 
         console.error(
-            "Report count error:",
+            "Report allowance claim error:",
             error
         );
 
-        return false;
+        return failure;
 
     }
 
@@ -5775,8 +5858,38 @@ async function generateSingleReport() {
     const fingerprint = getReportGenerationFingerprint(student);
     const alreadyGenerated = hasReportBeenGenerated(fingerprint);
 
-    /* Only a genuinely new version of this report consumes allowance. */
-    if (!alreadyGenerated && !canGenerateReports(1)) return;
+    /* Already-generated reports are safe to re-render for free -
+       no allowance needs to be claimed. */
+    if (alreadyGenerated) {
+        const report = createReport(student);
+
+        if (reportContainer) {
+            reportContainer.innerHTML = report;
+            saveGeneratedReports();
+            reportContainer.scrollIntoView({ behavior: "smooth" });
+        }
+
+        updateReportStatus();
+        return;
+    }
+
+    /* Fast local pre-check, purely for a quick UX message.
+       It is NOT what gates access - see claimReportAllowance(). */
+    if (!canGenerateReports(1)) return;
+
+    /* The report must not be built or shown until the server has
+       actually granted the allowance. */
+    const claim = await claimReportAllowance(1);
+
+    if (!claim.success || claim.claimedAmount < 1) {
+        alert(
+            "⚠️ Unable to generate this report - your subscription " +
+            "does not have enough remaining allowance. " +
+            "(Reports generated: " + claim.reportsGenerated + ")"
+        );
+        updateReportStatus();
+        return;
+    }
 
     const report = createReport(student);
 
@@ -5786,22 +5899,8 @@ async function generateSingleReport() {
         reportContainer.scrollIntoView({ behavior: "smooth" });
     }
 
-    if (alreadyGenerated) {
-        updateReportStatus();
-        return;
-    }
-
-    const countUpdated = await incrementReportCount(1);
-
-    if (countUpdated) {
-        markReportsAsGenerated([fingerprint]);
-        saveGeneratedReports();
-    } else {
-        alert(
-            "⚠️ The report was displayed, but the server could not update the usage count. Please refresh and check your subscription before generating another new report."
-        );
-    }
-
+    markReportsAsGenerated([fingerprint]);
+    saveGeneratedReports();
     updateReportStatus();
 }
 
@@ -5846,6 +5945,8 @@ async function generateAllReports() {
         return !item.alreadyGenerated;
     });
 
+    /* Fast local pre-check, purely for a quick UX message.
+       It is NOT what gates access - the server call below is. */
     if (remaining <= 0 && newItems.length > 0) {
         alert(
             "⚠️ REPORT GENERATION LIMIT REACHED\n\n" +
@@ -5857,9 +5958,6 @@ async function generateAllReports() {
         return;
     }
 
-    const newItemsAllowed = newItems.slice(0, remaining);
-    const blockedNewItems = newItems.length > newItemsAllowed.length;
-
     const confirmation = confirm(
         "Generate reports for " + students.length + " student(s)?\n\n" +
         "Subscription: " + getPlanDisplayName() + "\n" +
@@ -5867,12 +5965,39 @@ async function generateAllReports() {
         "Carried-over reports: " + carriedOver + "\n" +
         "Reports remaining: " + remaining +
         "\n\nAlready-generated reports will not consume allowance again." +
-        (blockedNewItems
-            ? "\n\n⚠️ Only " + newItemsAllowed.length + " new report(s) can consume the remaining allowance."
+        (newItems.length > remaining
+            ? "\n\n⚠️ Only up to " + remaining + " new report(s) can consume the remaining allowance."
             : "")
     );
 
     if (!confirmation) return;
+
+    /* The new reports must not be built or shown until the server has
+       actually granted allowance for them. Already-generated reports
+       don't need a claim at all, so only ask for the new ones. */
+    let claimedAmount = 0;
+
+    if (newItems.length > 0) {
+
+        const claim = await claimReportAllowance(newItems.length);
+
+        if (!claim.success && claim.claimedAmount === 0) {
+            alert(
+                "⚠️ Unable to generate new reports - your subscription " +
+                "does not have enough remaining allowance. " +
+                "(Reports generated: " + claim.reportsGenerated + ")"
+            );
+            updateReportStatus();
+            return;
+        }
+
+        claimedAmount = claim.claimedAmount;
+    }
+
+    /* Only the first `claimedAmount` new items were actually granted
+       allowance by the server - the rest cannot be rendered. */
+    const newItemsAllowed = newItems.slice(0, claimedAmount);
+    const blockedNewItems = newItems.length > newItemsAllowed.length;
 
     if (reportContainer) reportContainer.innerHTML = "";
 
@@ -5880,14 +6005,14 @@ async function generateAllReports() {
         newItemsAllowed.map(function (item) { return item.fingerprint; })
     );
 
-    const fingerprintsToCharge = [];
+    const fingerprintsToMark = [];
     let renderedCount = 0;
 
     for (let i = 0; i < reportItems.length; i++) {
         const item = reportItems[i];
 
         /* Existing reports are safe to render again without charging.
-           New reports are rendered only when allowance is available. */
+           New reports are rendered only when allowance was granted. */
         if (!item.alreadyGenerated && !allowedNewFingerprints.has(item.fingerprint)) {
             continue;
         }
@@ -5900,7 +6025,7 @@ async function generateAllReports() {
         renderedCount++;
 
         if (!item.alreadyGenerated) {
-            fingerprintsToCharge.push(item.fingerprint);
+            fingerprintsToMark.push(item.fingerprint);
         }
 
         if (renderedCount % 10 === 0) {
@@ -5920,19 +6045,9 @@ async function generateAllReports() {
 
     if (reportContainer) saveGeneratedReports();
 
-    if (fingerprintsToCharge.length > 0) {
-        const countUpdated = await incrementReportCount(
-            fingerprintsToCharge.length
-        );
-
-        if (countUpdated) {
-            markReportsAsGenerated(fingerprintsToCharge);
-            saveGeneratedReports();
-        } else {
-            alert(
-                "⚠️ Reports were displayed, but the server could not update the usage count. Please refresh and check your subscription before generating more reports."
-            );
-        }
+    if (fingerprintsToMark.length > 0) {
+        markReportsAsGenerated(fingerprintsToMark);
+        saveGeneratedReports();
     }
 
     updateReportStatus();
@@ -5940,7 +6055,7 @@ async function generateAllReports() {
     if (blockedNewItems) {
         alert(
             "⚠️ Generation stopped at your available report limit.\n\n" +
-            "New reports charged this operation: " + fingerprintsToCharge.length + "\n" +
+            "New reports charged this operation: " + fingerprintsToMark.length + "\n" +
             "Reports generated: " + reportsGenerated + " / " + totalAvailable + "\n\n" +
             "Renew or upgrade to generate the remaining new reports."
         );
@@ -5948,7 +6063,7 @@ async function generateAllReports() {
         alert(
             "✅ Reports generated successfully.\n\n" +
             "Reports displayed: " + renderedCount + "\n" +
-            "New reports charged: " + fingerprintsToCharge.length + "\n" +
+            "New reports charged: " + fingerprintsToMark.length + "\n" +
             "Total reports generated: " + reportsGenerated + " / " + totalAvailable
         );
     }
@@ -6038,6 +6153,21 @@ function updateTemporaryGenerationMessage(
 
 
 /* =========================================================
+   SUBJECT-NOT-OFFERED MARKER
+
+   The Excel VLOOKUP formulas fall back to "N/A" when a student
+   is not listed on a given subject's own sheet, meaning they do
+   not offer that subject. This helper detects that marker so
+   such subjects can be excluded from average calculations
+   instead of being counted as a zero score.
+   ========================================================= */
+
+function isMarkedNotOffered(value) {
+    return String(value).trim().toUpperCase() === "N/A";
+}
+
+
+/* =========================================================
    CREATE REPORT
    ========================================================= */
 
@@ -6069,10 +6199,22 @@ function createReport(student) {
         const exams = Number(student[examsKey]) || 0;
         const total = firstCA + secondCA + exams;
 
+        /* A subject the student does not offer is marked "N/A"
+           (see the Excel VLOOKUP fallback). If every column for
+           this subject is "N/A", the student isn't offering it,
+           so it must not be counted toward the average. */
+        const isNotOffered =
+            isMarkedNotOffered(student[firstCAKey]) &&
+            isMarkedNotOffered(student[secondCAKey]) &&
+            isMarkedNotOffered(student[examsKey]);
+
         const hasSubject =
-            Object.prototype.hasOwnProperty.call(student, firstCAKey) ||
-            Object.prototype.hasOwnProperty.call(student, secondCAKey) ||
-            Object.prototype.hasOwnProperty.call(student, examsKey);
+            !isNotOffered &&
+            (
+                Object.prototype.hasOwnProperty.call(student, firstCAKey) ||
+                Object.prototype.hasOwnProperty.call(student, secondCAKey) ||
+                Object.prototype.hasOwnProperty.call(student, examsKey)
+            );
 
         if (hasSubject) {
             subjects.push({
@@ -6384,7 +6526,7 @@ function createReport(student) {
 
                 <div class="comment-grid">
                     <div class="comment-card">
-                        <div class="comment-label">CLASS TEACHER'S COMMENT</div>
+                        <div class="comment-label">CLASS TEACHER'S COMMENT & SIGNATURE</div>
                         <div class="comment-box">${escapeHTML(teacherComment)}</div>
                         <div class="signature-line">
                             <span>Class Teacher</span>
@@ -6393,7 +6535,7 @@ function createReport(student) {
                     </div>
 
                     <div class="comment-card">
-                        <div class="comment-label">PRINCIPAL'S COMMENT</div>
+                        <div class="comment-label">PRINCIPAL'S COMMENT & SIGNATURE</div>
                         <div class="comment-box">${escapeHTML(principalComment)}</div>
                         <div class="signature-line">
                             <span>Principal</span>
@@ -6571,7 +6713,26 @@ function calculateStudentAverage(
                 ) || 0;
 
 
+            /* A subject the student does not offer is marked
+               "N/A" (see the Excel VLOOKUP fallback). If every
+               column for this subject is "N/A", it must not be
+               counted toward the average. */
+            const isNotOffered =
+                isMarkedNotOffered(
+                    student[subject + " 1st CA"]
+                ) &&
+                isMarkedNotOffered(
+                    student[subject + " 2nd CA"]
+                ) &&
+                isMarkedNotOffered(
+                    student[subject + " Exams"]
+                );
+
             const hasSubject =
+
+                !isNotOffered &&
+
+                (
 
                 Object.prototype
                     .hasOwnProperty.call(
@@ -6592,7 +6753,9 @@ function calculateStudentAverage(
                         student,
                         subject +
                         " Exams"
-                    );
+                    )
+
+                );
 
 
             if (hasSubject) {
