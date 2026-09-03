@@ -8,8 +8,6 @@
 
    The server-side renewal must store that value in the NEW row as
    carried_over_reports and reset reports_generated to 0.
-   (Confirm the paystack-verification Edge Function itself uses
-   these exact column names too - it was not part of this file.)
 
    Example: old limit 100, old usage 35 -> 65 carried over; new
    Standard limit 500 -> 565 total available.
@@ -72,6 +70,43 @@ let reportsGenerated = 0;
 let currentUserId = null;
 
 let currentSubscription = null;
+
+/* =========================================================
+   FREE TRIAL
+   New users receive 10 reports for 7 days. The trial row is
+   created server-side by the Supabase auth trigger.
+   ========================================================= */
+const FREE_TRIAL_PLAN = "free_trial";
+const FREE_TRIAL_STATUS = "trial";
+const FREE_TRIAL_REPORTS = 10;
+const FREE_TRIAL_DURATION_DAYS = 7;
+let freeTrialExpiryTimer = null;
+
+function clearFreeTrialExpiryTimer() {
+    if (freeTrialExpiryTimer) {
+        clearTimeout(freeTrialExpiryTimer);
+        freeTrialExpiryTimer = null;
+    }
+}
+
+function isFreeTrial(subscription) {
+    if (!subscription) return false;
+    const plan = String(subscription.plan || subscription.subscription_plan || subscription.package || "").trim().toLowerCase();
+    const status = String(subscription.status || "").trim().toLowerCase();
+    return plan === FREE_TRIAL_PLAN && status === FREE_TRIAL_STATUS;
+}
+
+function startFreeTrialExpiryTimer(subscription) {
+    clearFreeTrialExpiryTimer();
+    if (!isFreeTrial(subscription) || !subscription.expires_at) return;
+    const expiryTime = new Date(subscription.expires_at).getTime();
+    if (!Number.isFinite(expiryTime)) return;
+    const delay = Math.max(expiryTime - Date.now(), 0);
+    freeTrialExpiryTimer = setTimeout(async function () {
+        freeTrialExpiryTimer = null;
+        if (currentUserId) await checkLogin();
+    }, Math.min(delay + 1000, 2147483647));
+}
 
 
 /* =========================================================
@@ -540,7 +575,9 @@ const REPORT_LIMITS = {
 
     standard: 500,
 
-    premium: 1000
+    premium: 1000,
+
+    free_trial: FREE_TRIAL_REPORTS
 
 };
 
@@ -1856,304 +1893,112 @@ async function checkLogin() {
 async function checkSubscription(user) {
 
     try {
+        console.log("Checking subscription:", {
+            user_id: user.id,
+            website_id: WEBSITE_ID
+        });
 
-        console.log(
-            "Checking subscription:",
-            {
-                user_id: user.id,
-                website_id: WEBSITE_ID
-            }
-        );
-
-
-        const {
-            data: subscription,
-            error
-        } =
-            await supabaseClient
-                .from("subscriptions")
-                .select("*")
-                .eq("user_id", user.id)
-                .eq("website_id", WEBSITE_ID)
-                .order("created_at", {
-                    ascending: false
-                })
-                .limit(1)
-                .maybeSingle();
-
-
-        /* =================================================
-           DATABASE ERROR
-        ================================================= */
+        const { data: subscription, error } = await supabaseClient
+            .from("subscriptions")
+            .select("*")
+            .eq("user_id", user.id)
+            .eq("website_id", WEBSITE_ID)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
         if (error) {
-
-            console.error(
-                "Subscription database error:",
-                error
-            );
-
+            console.error("Subscription database error:", error);
             currentSubscriptionPlan = "";
             reportsGenerated = 0;
-
-            displaySubscriptionStatus(
-                null,
-                user
-            );
-
+            currentSubscription = null;
+            clearFreeTrialExpiryTimer();
+            displaySubscriptionStatus(null, user);
             showSubscription();
-
             return;
-
         }
-
-
-        /* =================================================
-           RESET VALUES
-        ================================================= */
 
         currentSubscriptionPlan = "";
         reportsGenerated = 0;
-         currentSubscription = null;
-
-
-        /* =================================================
-           NO SUBSCRIPTION FOR THIS WEBSITE
-        ================================================= */
+        currentSubscription = null;
+        clearFreeTrialExpiryTimer();
 
         if (!subscription) {
-
-            console.log(
-                "No subscription found for website:",
-                WEBSITE_ID
-            );
-
-            displaySubscriptionStatus(
-                null,
-                user
-            );
-
+            console.log("No subscription found for website:", WEBSITE_ID);
+            displaySubscriptionStatus(null, user);
             showSubscription();
-
             return;
-
         }
 
-      /* =================================================
-   STORE CURRENT SUBSCRIPTION
-   ================================================= */
+        currentSubscription = subscription;
+        currentSubscriptionPlan = String(
+            subscription.plan || subscription.subscription_plan || subscription.package || ""
+        ).trim().toLowerCase();
+        reportsGenerated = Number(subscription.reports_generated) || 0;
 
-currentSubscription =
-    subscription;
+        const subscriptionStatusValue = String(subscription.status || "").trim().toLowerCase();
+        const expiryDate = subscription.expires_at ? new Date(subscription.expires_at) : null;
+        const subscriptionIsActive = !!(
+            expiryDate && !isNaN(expiryDate.getTime()) && expiryDate > new Date()
+        );
 
+        /* FREE TRIAL ACCESS */
+        const trialIsActive =
+            currentSubscriptionPlan === FREE_TRIAL_PLAN &&
+            subscriptionStatusValue === FREE_TRIAL_STATUS &&
+            subscriptionIsActive;
 
-        /* =================================================
-           READ PLAN
-        ================================================= */
-
-        currentSubscriptionPlan =
-            String(
-
-                subscription.plan ||
-
-                subscription.subscription_plan ||
-
-                subscription.package ||
-
-                ""
-
-            )
-                .trim()
-                .toLowerCase();
-
-
-        /* =================================================
-           READ REPORT COUNT
-        ================================================= */
-
-        reportsGenerated =
-            Number(
-                subscription.reports_generated
-            ) || 0;
-
-
-        /* =================================================
-           READ STATUS
-        ================================================= */
-
-        const subscriptionStatusValue =
-            String(
-                subscription.status ||
-                ""
-            )
-                .trim()
-                .toLowerCase();
-
-
-        /* =================================================
-           CHECK EXPIRATION
-        ================================================= */
-
-        let subscriptionIsActive = false;
-
-
-        if (
-            subscription.expires_at
-        ) {
-
-            const expiryDate =
-                new Date(
-                    subscription.expires_at
-                );
-
-
-            const now =
-                new Date();
-
-
-            if (
-
-                !isNaN(
-                    expiryDate.getTime()
-                ) &&
-
-                expiryDate > now
-
-            ) {
-
-                subscriptionIsActive = true;
-
-            }
-
+        if (trialIsActive) {
+            startFreeTrialExpiryTimer(subscription);
+            displaySubscriptionStatus(subscription, user);
+            showApp();
+            updateReportStatus();
+            return;
         }
-
-
-        /* =================================================
-           ACCEPT VALID PAID STATUS VALUES
-        ================================================= */
 
         const validPaidStatuses = [
-
-            "paid",
-            "active",
-            "success",
-            "successful",
-            "completed"
-
+            "paid", "active", "success", "successful", "completed"
         ];
+        const paymentStatusIsValid = validPaidStatuses.includes(subscriptionStatusValue);
 
-
-        const paymentStatusIsValid =
-            validPaidStatuses.includes(
-                subscriptionStatusValue
-            );
-
-
-        /* =================================================
-           DISPLAY STATUS
-        ================================================= */
-
-        displaySubscriptionStatus(
-            subscription,
-            user
-        );
-
-
-        /* =================================================
-           FINAL ACCESS CHECK
-        ================================================= */
+        displaySubscriptionStatus(subscription, user);
 
         if (
-
             paymentStatusIsValid &&
-
             subscriptionIsActive &&
-
             currentSubscriptionPlan &&
-
-            REPORT_LIMITS[
-                currentSubscriptionPlan
-            ]
-
+            REPORT_LIMITS[currentSubscriptionPlan]
         ) {
-
-            console.log(
-                "ACTIVE SUBSCRIPTION:",
-                {
-                    website_id:
-                        WEBSITE_ID,
-
-                    plan:
-                        currentSubscriptionPlan,
-
-                    status:
-                        subscriptionStatusValue,
-
-                    expires_at:
-                        subscription.expires_at
-                }
-            );
-
-
+            console.log("ACTIVE SUBSCRIPTION:", {
+                website_id: WEBSITE_ID,
+                plan: currentSubscriptionPlan,
+                status: subscriptionStatusValue,
+                expires_at: subscription.expires_at
+            });
             showApp();
-
             updateReportStatus();
-
             return;
-
         }
 
-
-        /* =================================================
-           SUBSCRIPTION NOT ACTIVE
-        ================================================= */
-
-        console.log(
-            "Subscription is not active:",
-            {
-                website_id:
-                    WEBSITE_ID,
-
-                status:
-                    subscriptionStatusValue,
-
-                plan:
-                    currentSubscriptionPlan,
-
-                expires_at:
-                    subscription.expires_at,
-
-                paymentStatusIsValid:
-                    paymentStatusIsValid,
-
-                subscriptionIsActive:
-                    subscriptionIsActive,
-
-                planExists:
-                    !!REPORT_LIMITS[
-                        currentSubscriptionPlan
-                    ]
-            }
-        );
-
-
+        console.log("Subscription is not active:", {
+            website_id: WEBSITE_ID,
+            status: subscriptionStatusValue,
+            plan: currentSubscriptionPlan,
+            expires_at: subscription.expires_at,
+            paymentStatusIsValid,
+            subscriptionIsActive,
+            planExists: !!REPORT_LIMITS[currentSubscriptionPlan]
+        });
         showSubscription();
-
 
     } catch (error) {
-
-        console.error(
-            "Subscription check failed:",
-            error
-        );
-
+        console.error("Subscription check failed:", error);
         currentSubscriptionPlan = "";
         reportsGenerated = 0;
-
+        currentSubscription = null;
+        clearFreeTrialExpiryTimer();
         showSubscription();
-
     }
-
 }
 
 /* =========================================================
@@ -2432,6 +2277,35 @@ function displaySubscriptionStatus(
 
 
     /* =================================================
+       FREE TRIAL
+    ================================================= */
+    const trialIsActive =
+        plan === FREE_TRIAL_PLAN &&
+        status === FREE_TRIAL_STATUS &&
+        !isExpired;
+
+    if (trialIsActive) {
+        subscriptionStatus.innerHTML = `
+            <strong>Subscription Status:</strong>
+            <span style="color:green;"> FREE TRIAL / ACTIVE</span>
+            <br>
+            <strong>Plan:</strong> FREE 7-DAY TRIAL
+            <br>
+            <strong>Account:</strong> ${escapeHTML(user?.email || subscription.email_address || "")}
+            <br>
+            <strong>Expires:</strong> ${escapeHTML(expiryText)}
+            <br>
+            <strong>Reports Generated:</strong> ${generated} / ${FREE_TRIAL_REPORTS}
+            <br>
+            <strong>Trial Reports Remaining:</strong> ${remaining}
+            <br><br>
+            🎁 You have ${FREE_TRIAL_REPORTS} free reports for 7 days.
+        `;
+        return;
+    }
+
+
+    /* =================================================
        ACTIVE SUBSCRIPTION
     ================================================= */
 
@@ -2535,6 +2409,30 @@ function displaySubscriptionStatus(
 
         return;
 
+    }
+
+
+    /* =================================================
+       EXPIRED FREE TRIAL
+    ================================================= */
+    if (
+        plan === FREE_TRIAL_PLAN &&
+        status === FREE_TRIAL_STATUS &&
+        isExpired
+    ) {
+        subscriptionStatus.innerHTML = `
+            <strong>Subscription Status:</strong>
+            <span style="color:red;"> FREE TRIAL EXPIRED</span>
+            <br>
+            <strong>Account:</strong> ${escapeHTML(user?.email || subscription.email_address || "")}
+            <br>
+            <strong>Trial Reports Used:</strong> ${generated} / ${FREE_TRIAL_REPORTS}
+            <br>
+            <strong>Expired:</strong> ${escapeHTML(expiryText)}
+            <br><br>
+            Your free trial has ended. Please choose a paid subscription plan to continue.
+        `;
+        return;
     }
 
 
@@ -2667,6 +2565,11 @@ function getPlanDisplayNameFromPlan(
 
         return "PREMIUM";
 
+    }
+
+
+    if (cleanPlan === FREE_TRIAL_PLAN) {
+        return "FREE 7-DAY TRIAL";
     }
 
 
@@ -4199,7 +4102,7 @@ function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,2,FALSE),"N/A"))`
+                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,2,FALSE),""))`
 
                     };
 
@@ -4212,7 +4115,7 @@ function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,3,FALSE),"N/A"))`
+                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,3,FALSE),""))`
 
                     };
 
@@ -4225,7 +4128,7 @@ function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,4,FALSE),"N/A"))`
+                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,4,FALSE),""))`
 
                     };
 
@@ -4317,15 +4220,6 @@ function downloadExcelTemplate() {
             };
 
 
-            /* =============================================
-               A subject that a student does not offer is
-               marked "N/A" (see VLOOKUP fallback above)
-               instead of being averaged in. Each not-offered
-               subject produces 3 "N/A" cells across its
-               1st CA / 2nd CA / Exams columns, so dividing
-               that count by 3 gives the number of subjects
-               to exclude from the denominator.
-               ============================================= */
             scoresSheet[
                 averageLetter +
                 row
@@ -4334,7 +4228,7 @@ function downloadExcelTemplate() {
                 t: "n",
 
                 f:
-                    `IF($B${row}="","",IFERROR(${overallTotalLetter}${row}/(${schoolSubjects.length}-COUNTIF(${firstSubjectLetter}${row}:${lastSubjectLetter}${row},"N/A")/3),0))`
+                    `IF($B${row}="","",IFERROR(${overallTotalLetter}${row}/${schoolSubjects.length},0))`
 
             };
 
@@ -5141,7 +5035,7 @@ function attachBehaviorData(
                                 "Class Teacher's Comment"
                             ] ||
                             row[
-                                "Class Teacher's Comment"
+                                "Class Teacher's Comment/Sign"
                             ] ||
                             "",
 
@@ -5150,7 +5044,7 @@ function attachBehaviorData(
                                 "Principal's Comment"
                             ] ||
                             row[
-                                "Principal's Comment"
+                                "Principal's Comment/Sign"
                             ] ||
                             ""
 
@@ -5524,23 +5418,22 @@ function updateReportStatus() {
 
 
 /* =========================================================
-   CAN GENERATE REPORTS (CLIENT-SIDE PRE-CHECK ONLY)
-
-   This is a fast, local check used purely for UX: it lets the
-   UI show a clear message immediately instead of waiting on a
-   network round trip when the user is obviously out of reports.
-
-   It is NOT the security boundary. The real, authoritative
-   check happens server-side inside claimReportAllowance(), via
-   the "claim_report_allowance" Postgres function, which locks
-   the subscription row and only increments reports_generated if
-   allowance genuinely remains. A report must never be built or
-   displayed until that server call has succeeded.
+   CAN GENERATE REPORTS
    ========================================================= */
 
 function canGenerateReports(
     numberOfReports
 ) {
+
+    if (isFreeTrial(currentSubscription)) {
+        const expiry = new Date(currentSubscription.expires_at);
+        if (!Number.isFinite(expiry.getTime()) || expiry <= new Date()) {
+            alert(
+                "🎁 Your 7-day free trial has expired.\n\nPlease choose a paid subscription plan to continue."
+            );
+            return false;
+        }
+    }
 
     const limit =
         getReportLimit();
@@ -5675,41 +5568,12 @@ function canGenerateReports(
 
 }
 /* =========================================================
-   CLAIM REPORT ALLOWANCE (SERVER-AUTHORITATIVE)
-
-   This replaces the old "build report, then increment count"
-   flow. It must be called and must succeed BEFORE a report is
-   built or shown to the user - it is the actual permission
-   check, not just a usage log.
-
-   It calls the "claim_report_allowance" Postgres function
-   (see the accompanying SQL migration), which:
-     - locks the caller's subscription row (FOR UPDATE), so two
-       concurrent requests (two tabs, a double-click) can't both
-       pass the check before either one increments,
-     - works out the real limit + carried-over reports on the
-       server, independent of anything the client claims,
-     - only increments reports_generated by however much
-       allowance actually remains, and
-     - returns how much was actually claimed, so a batch request
-       can be partially granted instead of all-or-nothing.
-
-   Returns:
-     { success, claimedAmount, reportsGenerated, remaining }
-   claimedAmount may be less than the amount requested (or 0)
-   if less allowance remains than was asked for.
+   INCREMENT REPORT COUNT SECURELY
    ========================================================= */
 
-async function claimReportAllowance(
+async function incrementReportCount(
     amount
 ) {
-
-    const failure = {
-        success: false,
-        claimedAmount: 0,
-        reportsGenerated: reportsGenerated,
-        remaining: 0
-    };
 
     if (!currentUserId) {
 
@@ -5717,22 +5581,22 @@ async function claimReportAllowance(
             "No authenticated user found."
         );
 
-        return failure;
+        return false;
 
     }
 
 
-    const requestedAmount =
+    const reportAmount =
         Number(amount);
 
 
     if (
 
         !Number.isInteger(
-            requestedAmount
+            reportAmount
         ) ||
 
-        requestedAmount <=
+        reportAmount <=
         0
 
     ) {
@@ -5742,7 +5606,7 @@ async function claimReportAllowance(
             amount
         );
 
-        return failure;
+        return false;
 
     }
 
@@ -5755,17 +5619,14 @@ async function claimReportAllowance(
         } =
             await supabaseClient
                 .rpc(
-    "claim_report_allowance",
+    "increment_reports_generated_for_website",
     {
-
-        p_user_id:
-            currentUserId,
 
         p_website_id:
             WEBSITE_ID,
 
         p_amount:
-            requestedAmount
+            reportAmount
 
     }
 );
@@ -5773,64 +5634,35 @@ async function claimReportAllowance(
         if (error) {
 
             console.error(
-                "Unable to claim report allowance:",
+                "Unable to increment report count:",
                 error
             );
 
-            return failure;
-
-        }
-
-
-        /* The Postgres function returns a single-row table. */
-        const result =
-            Array.isArray(data)
-                ? data[0]
-                : data;
-
-        if (!result) {
-
-            console.error(
-                "Empty response from claim_report_allowance."
-            );
-
-            return failure;
+            return false;
 
         }
 
 
         reportsGenerated =
-            Number(
-                result.reports_generated
-            ) || reportsGenerated;
-
-        if (currentSubscription) {
-
-            currentSubscription.reports_generated =
-                reportsGenerated;
-
-        }
+            Number(data) ||
+            reportsGenerated +
+            reportAmount;
 
 
         updateReportStatus();
 
 
-        return {
-            success: !!result.success,
-            claimedAmount: Number(result.claimed_amount) || 0,
-            reportsGenerated: reportsGenerated,
-            remaining: Number(result.remaining) || 0
-        };
+        return true;
 
 
     } catch (error) {
 
         console.error(
-            "Report allowance claim error:",
+            "Report count error:",
             error
         );
 
-        return failure;
+        return false;
 
     }
 
@@ -5858,38 +5690,8 @@ async function generateSingleReport() {
     const fingerprint = getReportGenerationFingerprint(student);
     const alreadyGenerated = hasReportBeenGenerated(fingerprint);
 
-    /* Already-generated reports are safe to re-render for free -
-       no allowance needs to be claimed. */
-    if (alreadyGenerated) {
-        const report = createReport(student);
-
-        if (reportContainer) {
-            reportContainer.innerHTML = report;
-            saveGeneratedReports();
-            reportContainer.scrollIntoView({ behavior: "smooth" });
-        }
-
-        updateReportStatus();
-        return;
-    }
-
-    /* Fast local pre-check, purely for a quick UX message.
-       It is NOT what gates access - see claimReportAllowance(). */
-    if (!canGenerateReports(1)) return;
-
-    /* The report must not be built or shown until the server has
-       actually granted the allowance. */
-    const claim = await claimReportAllowance(1);
-
-    if (!claim.success || claim.claimedAmount < 1) {
-        alert(
-            "⚠️ Unable to generate this report - your subscription " +
-            "does not have enough remaining allowance. " +
-            "(Reports generated: " + claim.reportsGenerated + ")"
-        );
-        updateReportStatus();
-        return;
-    }
+    /* Only a genuinely new version of this report consumes allowance. */
+    if (!alreadyGenerated && !canGenerateReports(1)) return;
 
     const report = createReport(student);
 
@@ -5899,8 +5701,22 @@ async function generateSingleReport() {
         reportContainer.scrollIntoView({ behavior: "smooth" });
     }
 
-    markReportsAsGenerated([fingerprint]);
-    saveGeneratedReports();
+    if (alreadyGenerated) {
+        updateReportStatus();
+        return;
+    }
+
+    const countUpdated = await incrementReportCount(1);
+
+    if (countUpdated) {
+        markReportsAsGenerated([fingerprint]);
+        saveGeneratedReports();
+    } else {
+        alert(
+            "⚠️ The report was displayed, but the server could not update the usage count. Please refresh and check your subscription before generating another new report."
+        );
+    }
+
     updateReportStatus();
 }
 
@@ -5945,8 +5761,6 @@ async function generateAllReports() {
         return !item.alreadyGenerated;
     });
 
-    /* Fast local pre-check, purely for a quick UX message.
-       It is NOT what gates access - the server call below is. */
     if (remaining <= 0 && newItems.length > 0) {
         alert(
             "⚠️ REPORT GENERATION LIMIT REACHED\n\n" +
@@ -5958,6 +5772,9 @@ async function generateAllReports() {
         return;
     }
 
+    const newItemsAllowed = newItems.slice(0, remaining);
+    const blockedNewItems = newItems.length > newItemsAllowed.length;
+
     const confirmation = confirm(
         "Generate reports for " + students.length + " student(s)?\n\n" +
         "Subscription: " + getPlanDisplayName() + "\n" +
@@ -5965,39 +5782,12 @@ async function generateAllReports() {
         "Carried-over reports: " + carriedOver + "\n" +
         "Reports remaining: " + remaining +
         "\n\nAlready-generated reports will not consume allowance again." +
-        (newItems.length > remaining
-            ? "\n\n⚠️ Only up to " + remaining + " new report(s) can consume the remaining allowance."
+        (blockedNewItems
+            ? "\n\n⚠️ Only " + newItemsAllowed.length + " new report(s) can consume the remaining allowance."
             : "")
     );
 
     if (!confirmation) return;
-
-    /* The new reports must not be built or shown until the server has
-       actually granted allowance for them. Already-generated reports
-       don't need a claim at all, so only ask for the new ones. */
-    let claimedAmount = 0;
-
-    if (newItems.length > 0) {
-
-        const claim = await claimReportAllowance(newItems.length);
-
-        if (!claim.success && claim.claimedAmount === 0) {
-            alert(
-                "⚠️ Unable to generate new reports - your subscription " +
-                "does not have enough remaining allowance. " +
-                "(Reports generated: " + claim.reportsGenerated + ")"
-            );
-            updateReportStatus();
-            return;
-        }
-
-        claimedAmount = claim.claimedAmount;
-    }
-
-    /* Only the first `claimedAmount` new items were actually granted
-       allowance by the server - the rest cannot be rendered. */
-    const newItemsAllowed = newItems.slice(0, claimedAmount);
-    const blockedNewItems = newItems.length > newItemsAllowed.length;
 
     if (reportContainer) reportContainer.innerHTML = "";
 
@@ -6005,14 +5795,14 @@ async function generateAllReports() {
         newItemsAllowed.map(function (item) { return item.fingerprint; })
     );
 
-    const fingerprintsToMark = [];
+    const fingerprintsToCharge = [];
     let renderedCount = 0;
 
     for (let i = 0; i < reportItems.length; i++) {
         const item = reportItems[i];
 
         /* Existing reports are safe to render again without charging.
-           New reports are rendered only when allowance was granted. */
+           New reports are rendered only when allowance is available. */
         if (!item.alreadyGenerated && !allowedNewFingerprints.has(item.fingerprint)) {
             continue;
         }
@@ -6025,7 +5815,7 @@ async function generateAllReports() {
         renderedCount++;
 
         if (!item.alreadyGenerated) {
-            fingerprintsToMark.push(item.fingerprint);
+            fingerprintsToCharge.push(item.fingerprint);
         }
 
         if (renderedCount % 10 === 0) {
@@ -6045,9 +5835,19 @@ async function generateAllReports() {
 
     if (reportContainer) saveGeneratedReports();
 
-    if (fingerprintsToMark.length > 0) {
-        markReportsAsGenerated(fingerprintsToMark);
-        saveGeneratedReports();
+    if (fingerprintsToCharge.length > 0) {
+        const countUpdated = await incrementReportCount(
+            fingerprintsToCharge.length
+        );
+
+        if (countUpdated) {
+            markReportsAsGenerated(fingerprintsToCharge);
+            saveGeneratedReports();
+        } else {
+            alert(
+                "⚠️ Reports were displayed, but the server could not update the usage count. Please refresh and check your subscription before generating more reports."
+            );
+        }
     }
 
     updateReportStatus();
@@ -6055,7 +5855,7 @@ async function generateAllReports() {
     if (blockedNewItems) {
         alert(
             "⚠️ Generation stopped at your available report limit.\n\n" +
-            "New reports charged this operation: " + fingerprintsToMark.length + "\n" +
+            "New reports charged this operation: " + fingerprintsToCharge.length + "\n" +
             "Reports generated: " + reportsGenerated + " / " + totalAvailable + "\n\n" +
             "Renew or upgrade to generate the remaining new reports."
         );
@@ -6063,7 +5863,7 @@ async function generateAllReports() {
         alert(
             "✅ Reports generated successfully.\n\n" +
             "Reports displayed: " + renderedCount + "\n" +
-            "New reports charged: " + fingerprintsToMark.length + "\n" +
+            "New reports charged: " + fingerprintsToCharge.length + "\n" +
             "Total reports generated: " + reportsGenerated + " / " + totalAvailable
         );
     }
@@ -6153,21 +5953,6 @@ function updateTemporaryGenerationMessage(
 
 
 /* =========================================================
-   SUBJECT-NOT-OFFERED MARKER
-
-   The Excel VLOOKUP formulas fall back to "N/A" when a student
-   is not listed on a given subject's own sheet, meaning they do
-   not offer that subject. This helper detects that marker so
-   such subjects can be excluded from average calculations
-   instead of being counted as a zero score.
-   ========================================================= */
-
-function isMarkedNotOffered(value) {
-    return String(value).trim().toUpperCase() === "N/A";
-}
-
-
-/* =========================================================
    CREATE REPORT
    ========================================================= */
 
@@ -6199,22 +5984,10 @@ function createReport(student) {
         const exams = Number(student[examsKey]) || 0;
         const total = firstCA + secondCA + exams;
 
-        /* A subject the student does not offer is marked "N/A"
-           (see the Excel VLOOKUP fallback). If every column for
-           this subject is "N/A", the student isn't offering it,
-           so it must not be counted toward the average. */
-        const isNotOffered =
-            isMarkedNotOffered(student[firstCAKey]) &&
-            isMarkedNotOffered(student[secondCAKey]) &&
-            isMarkedNotOffered(student[examsKey]);
-
         const hasSubject =
-            !isNotOffered &&
-            (
-                Object.prototype.hasOwnProperty.call(student, firstCAKey) ||
-                Object.prototype.hasOwnProperty.call(student, secondCAKey) ||
-                Object.prototype.hasOwnProperty.call(student, examsKey)
-            );
+            Object.prototype.hasOwnProperty.call(student, firstCAKey) ||
+            Object.prototype.hasOwnProperty.call(student, secondCAKey) ||
+            Object.prototype.hasOwnProperty.call(student, examsKey);
 
         if (hasSubject) {
             subjects.push({
@@ -6526,7 +6299,7 @@ function createReport(student) {
 
                 <div class="comment-grid">
                     <div class="comment-card">
-                        <div class="comment-label">CLASS TEACHER'S COMMENT & SIGNATURE</div>
+                        <div class="comment-label">CLASS TEACHER'S COMMENT</div>
                         <div class="comment-box">${escapeHTML(teacherComment)}</div>
                         <div class="signature-line">
                             <span>Class Teacher</span>
@@ -6535,7 +6308,7 @@ function createReport(student) {
                     </div>
 
                     <div class="comment-card">
-                        <div class="comment-label">PRINCIPAL'S COMMENT & SIGNATURE</div>
+                        <div class="comment-label">PRINCIPAL'S COMMENT</div>
                         <div class="comment-box">${escapeHTML(principalComment)}</div>
                         <div class="signature-line">
                             <span>Principal</span>
@@ -6713,26 +6486,7 @@ function calculateStudentAverage(
                 ) || 0;
 
 
-            /* A subject the student does not offer is marked
-               "N/A" (see the Excel VLOOKUP fallback). If every
-               column for this subject is "N/A", it must not be
-               counted toward the average. */
-            const isNotOffered =
-                isMarkedNotOffered(
-                    student[subject + " 1st CA"]
-                ) &&
-                isMarkedNotOffered(
-                    student[subject + " 2nd CA"]
-                ) &&
-                isMarkedNotOffered(
-                    student[subject + " Exams"]
-                );
-
             const hasSubject =
-
-                !isNotOffered &&
-
-                (
 
                 Object.prototype
                     .hasOwnProperty.call(
@@ -6753,9 +6507,7 @@ function calculateStudentAverage(
                         student,
                         subject +
                         " Exams"
-                    )
-
-                );
+                    );
 
 
             if (hasSubject) {
@@ -6974,7 +6726,9 @@ async function startPaystackPayment(
 
         /* CAPTURE THE UNUSED OLD BALANCE BEFORE RENEWAL */
         const renewalCarryOver = currentSubscription
-            ? getReportsRemaining(currentSubscription)
+            ? (isFreeTrial(currentSubscription)
+                ? 0
+                : getReportsRemaining(currentSubscription))
             : 0;
 
 
@@ -7125,7 +6879,7 @@ async function verifyPaystackPayment(
             await supabaseClient
                 .functions
                 .invoke(
-                    "paystack-verification",
+                    "verify-paystack-payment-websites",
                     {
 
                         body: {
