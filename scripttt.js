@@ -6197,9 +6197,9 @@ function createReport(student) {
         const total = firstCA + secondCA + exams;
 
         const hasSubject =
-            Object.prototype.hasOwnProperty.call(student, firstCAKey) ||
-            Object.prototype.hasOwnProperty.call(student, secondCAKey) ||
-            Object.prototype.hasOwnProperty.call(student, examsKey);
+            String(student[firstCAKey] ?? "").trim() !== "" ||
+            String(student[secondCAKey] ?? "").trim() !== "" ||
+            String(student[examsKey] ?? "").trim() !== "";
 
         if (hasSubject) {
             subjects.push({
@@ -6700,26 +6700,26 @@ function calculateStudentAverage(
 
             const hasSubject =
 
-                Object.prototype
-                    .hasOwnProperty.call(
-                        student,
+                String(
+                    student[
                         subject +
                         " 1st CA"
-                    ) ||
+                    ] ?? ""
+                ).trim() !== "" ||
 
-                Object.prototype
-                    .hasOwnProperty.call(
-                        student,
+                String(
+                    student[
                         subject +
                         " 2nd CA"
-                    ) ||
+                    ] ?? ""
+                ).trim() !== "" ||
 
-                Object.prototype
-                    .hasOwnProperty.call(
-                        student,
+                String(
+                    student[
                         subject +
                         " Exams"
-                    );
+                    ] ?? ""
+                ).trim() !== "";
 
 
             if (hasSubject) {
