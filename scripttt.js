@@ -2961,7 +2961,7 @@ function attachApplicationEvents() {
         );
 
     }
-   const backToAppButton = document.getElementById("backToAppButton");
+  const backToAppButton = document.getElementById("backToAppButton");
 
 if (backToAppButton) {
     backToAppButton.addEventListener("click", () => {
@@ -4208,6 +4208,21 @@ function downloadExcelTemplate() {
             );
 
 
+        const subjectSheetSafeNames =
+            schoolSubjects.map(
+                function (subject) {
+
+                    return actualSubjectSheetNames[
+                        subject
+                    ].replace(
+                        /'/g,
+                        "''"
+                    );
+
+                }
+            );
+
+
         for (
             let row = 2;
             row <=
@@ -4228,6 +4243,23 @@ function downloadExcelTemplate() {
             };
 
 
+            /* Count only the subjects this student actually offers —
+               i.e. subjects whose sheet contains this student's Adm No —
+               so subjects not offered are excluded from the average's
+               denominator instead of dividing by the school's total
+               subject count. */
+            const subjectsOfferedFormula =
+                subjectSheetSafeNames
+                    .map(
+                        function (safeSheetName) {
+
+                            return `COUNTIF('${safeSheetName}'!$B:$B,$B${row})`;
+
+                        }
+                    )
+                    .join("+");
+
+
             scoresSheet[
                 averageLetter +
                 row
@@ -4236,7 +4268,7 @@ function downloadExcelTemplate() {
                 t: "n",
 
                 f:
-                    `IF($B${row}="","",IFERROR(${overallTotalLetter}${row}/${schoolSubjects.length},0))`
+                    `IF($B${row}="","",IFERROR(${overallTotalLetter}${row}/(${subjectsOfferedFormula}),0))`
 
             };
 
