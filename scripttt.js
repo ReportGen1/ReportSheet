@@ -5569,11 +5569,10 @@ function canGenerateReports(
 }
 /* =========================================================
    INCREMENT REPORT COUNT SECURELY
+   SERVER AUTHORITATIVE
    ========================================================= */
 
-async function incrementReportCount(
-    amount
-) {
+async function incrementReportCount(amount) {
 
     if (!currentUserId) {
 
@@ -5582,7 +5581,6 @@ async function incrementReportCount(
         );
 
         return false;
-
     }
 
 
@@ -5591,14 +5589,8 @@ async function incrementReportCount(
 
 
     if (
-
-        !Number.isInteger(
-            reportAmount
-        ) ||
-
-        reportAmount <=
-        0
-
+        !Number.isInteger(reportAmount) ||
+        reportAmount <= 0
     ) {
 
         console.error(
@@ -5607,7 +5599,6 @@ async function incrementReportCount(
         );
 
         return false;
-
     }
 
 
@@ -5617,43 +5608,223 @@ async function incrementReportCount(
             data,
             error
         } =
-            await supabaseClient
-                .rpc(
-    "claim_report_allowance",
-    {
+            await supabaseClient.rpc(
+                "claim_report_allowance",
+                {
+                    p_user_id:
+                        currentUserId,
 
-        p_user_id:
-            currentUserId,
+                    p_website_id:
+                        WEBSITE_ID,
 
-        p_website_id:
-            WEBSITE_ID,
+                    p_amount:
+                        reportAmount
+                }
+            );
 
-        p_amount:
-            reportAmount
 
-    }
-);
+        /* -------------------------------------------------
+           RPC ERROR
+           ------------------------------------------------- */
 
         if (error) {
 
             console.error(
-                "Unable to increment report count:",
+                "Unable to claim report allowance:",
                 error
             );
 
             return false;
-
         }
 
 
-        reportsGenerated =
-            Number(data) ||
-            reportsGenerated +
-            reportAmount;
+        /* -------------------------------------------------
+           The RPC returns a TABLE, therefore Supabase
+           normally returns an array containing one row.
+           ------------------------------------------------- */
+
+        const result =
+            Array.isArray(data)
+                ? data[0]
+                : data;
+
+
+        if (!result) {
+
+            console.error(
+                "Report allowance RPC returned no result:",
+                data
+            );
+
+            return false;
+        }
+
+
+        /* -------------------------------------------------
+           Read the server-authoritative result
+           ------------------------------------------------- */
+
+        const success =
+            result.success === true ||
+            String(result.success)
+                .toLowerCase() === "true";
+
+
+        const claimedAmount =
+            Number(
+                result.claimed_amount
+            ) || 0;
+
+
+        const serverReportsGenerated =
+            Number(
+                result.reports_generated
+            );
+
+
+        const serverRemaining =
+            Number(
+                result.remaining
+            );
+
+
+        /* -------------------------------------------------
+           Server rejected the request
+           ------------------------------------------------- */
+
+        if (!success) {
+
+            console.warn(
+                "Report allowance claim rejected:",
+                result
+            );
+
+            if (
+                Number.isFinite(
+                    serverReportsGenerated
+                )
+            ) {
+
+                reportsGenerated =
+                    serverReportsGenerated;
+            }
+
+
+            updateReportStatus();
+
+            return false;
+        }
+
+
+        /* -------------------------------------------------
+           IMPORTANT:
+           The server must confirm the FULL amount requested.
+           This prevents Generate All from locally assuming
+           reports were charged when the server only granted
+           part of the request.
+           ------------------------------------------------- */
+
+        if (
+            claimedAmount !==
+            reportAmount
+        ) {
+
+            console.error(
+                "Server granted a different number of reports.",
+                {
+                    requested:
+                        reportAmount,
+
+                    claimed:
+                        claimedAmount,
+
+                    serverResult:
+                        result
+                }
+            );
+
+
+            if (
+                Number.isFinite(
+                    serverReportsGenerated
+                )
+            ) {
+
+                reportsGenerated =
+                    serverReportsGenerated;
+            }
+
+
+            updateReportStatus();
+
+            return false;
+        }
+
+
+        /* -------------------------------------------------
+           ACCEPT SERVER-AUTHORITATIVE COUNT
+           ------------------------------------------------- */
+
+        if (
+            Number.isFinite(
+                serverReportsGenerated
+            )
+        ) {
+
+            reportsGenerated =
+                serverReportsGenerated;
+
+        } else {
+
+            console.error(
+                "Server did not return a valid reports_generated value."
+            );
+
+            return false;
+        }
+
+
+        /* -------------------------------------------------
+           Refresh the local subscription object so the
+           displayed remaining allowance agrees with the
+           server.
+           ------------------------------------------------- */
+
+        if (currentSubscription) {
+
+            currentSubscription =
+                {
+                    ...currentSubscription,
+
+                    reports_generated:
+                        reportsGenerated
+                };
+        }
+
+
+        /* -------------------------------------------------
+           Optional diagnostic
+           ------------------------------------------------- */
+
+        console.log(
+            "Report allowance successfully claimed:",
+            {
+                requested:
+                    reportAmount,
+
+                claimed:
+                    claimedAmount,
+
+                reportsGenerated:
+                    reportsGenerated,
+
+                remaining:
+                    serverRemaining
+            }
+        );
 
 
         updateReportStatus();
-
 
         return true;
 
@@ -5666,9 +5837,7 @@ async function incrementReportCount(
         );
 
         return false;
-
     }
-
 }
 
 
