@@ -167,6 +167,25 @@ input:focus-visible {
     outline-offset: 2px;
 }
 
+.back-to-app-button {
+    display: block;
+    width: 100%;
+    max-width: 300px;
+    margin: 0 auto 20px;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    background: #555;
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.back-to-app-button:hover {
+    opacity: 0.9;
+}
+
 /* =========================================================
    INPUTS
    ========================================================= */
