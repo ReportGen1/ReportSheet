@@ -225,7 +225,7 @@ function migrateLegacyGeneratedReportsToLedger() {
     const fingerprints = [];
 
     students.forEach(function (student) {
-        const name = String(student["Student Name"] || "").trim();
+        const name = cleanStudentName(student["Student Name"]);
         const admissionNo = String(student["Admission No"] || "").trim();
 
         if (!name) return;
@@ -4584,6 +4584,17 @@ function handleExcelUpload(event) {
 
 
                 /* =========================
+                   CLEAN STUDENT NAMES
+                   ========================= */
+
+                actualRows.forEach(function (student) {
+                    student["Student Name"] = cleanStudentName(
+                        student["Student Name"]
+                    );
+                });
+
+
+                /* =========================
                    SUBJECTS
                    ========================= */
 
@@ -4604,6 +4615,17 @@ function handleExcelUpload(event) {
                     renderSubjectList();
 
                 }
+
+
+                /* =========================
+                   REBUILD SUBJECT SCORES
+                   ========================= */
+
+                attachSubjectScores(
+                    actualRows,
+                    workbook,
+                    schoolSubjects
+                );
 
 
                 /* =========================
@@ -4941,6 +4963,138 @@ function readSettings(
 
 
 /* =========================================================
+   STUDENT NAME CLEANING / NORMALIZATION
+
+   This applies ONLY to Student Name values.
+   It removes leading/trailing spaces, repeated whitespace,
+   tabs/line breaks, non-breaking spaces, zero-width characters,
+   BOM characters and other invisible/control characters.
+   The displayed name keeps its original letter case.
+   ========================================================= */
+function cleanStudentName(value) {
+    if (value === null || value === undefined) return "";
+
+    return String(value)
+        .normalize("NFKC")
+        .replace(/[\u0000-\u001F\u007F-\u009F]/g, " ")
+        .replace(/[\u00A0\u1680\u2000-\u200B\u2028\u2029\u202F\u205F\u3000\uFEFF]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function normalizeStudentName(value) {
+    return cleanStudentName(value)
+        .toLowerCase()
+        /* Ignore punctuation/symbols for matching only.
+           The displayed Student Name remains unchanged. */
+        .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function normalizeStudentAdmissionNo(value) {
+    if (value === null || value === undefined) return "";
+    return String(value).trim().toLowerCase();
+}
+
+/* =========================================================
+   FIND AN UPLOADED SUBJECT SHEET
+   ========================================================= */
+function getUploadedSubjectSheet(subject, workbook) {
+    if (!workbook || !workbook.SheetNames) return null;
+
+    const cleanSubject = String(subject || "")
+        .replace(/[:\\/?*\[\]]/g, "")
+        .trim()
+        .substring(0, 31)
+        .toLowerCase();
+
+    const exactName = workbook.SheetNames.find(function (name) {
+        return String(name).toLowerCase() === cleanSubject;
+    });
+
+    if (exactName) return workbook.Sheets[exactName];
+
+    /* Also tolerate harmless extra spaces in the sheet name. */
+    const relaxedName = workbook.SheetNames.find(function (name) {
+        return cleanStudentName(name).toLowerCase() === cleanSubject;
+    });
+
+    return relaxedName ? workbook.Sheets[relaxedName] : null;
+}
+
+/* =========================================================
+   ATTACH SUBJECT SCORES
+
+   The Excel template normally uses VLOOKUP formulas. However,
+   cached Excel formula results can be blank when a teacher entered
+   extra/invisible characters in a Student Name. This function reads
+   each subject sheet directly and rebuilds the subject score values
+   in JavaScript using the cleaned Student Name as a matching key.
+
+   Admission No is preferred when available; Student Name is the
+   fallback. This affects Student Name matching only and does not
+   alter scores or any other field.
+   ========================================================= */
+function attachSubjectScores(scoreRows, workbook, subjects) {
+    if (!Array.isArray(scoreRows) || !workbook || !Array.isArray(subjects)) {
+        return;
+    }
+
+    scoreRows.forEach(function (student) {
+        subjects.forEach(function (subject) {
+            student[subject + " 1st CA"] = "";
+            student[subject + " 2nd CA"] = "";
+            student[subject + " Exams"] = "";
+        });
+    });
+
+    subjects.forEach(function (subject) {
+        const sheet = getUploadedSubjectSheet(subject, workbook);
+        if (!sheet) return;
+
+        const subjectRows = XLSX.utils.sheet_to_json(sheet, {
+            defval: ""
+        });
+
+        const byAdmission = new Map();
+        const byName = new Map();
+
+        subjectRows.forEach(function (row) {
+            const admissionNo = normalizeStudentAdmissionNo(row["Adm No"]);
+            const name = normalizeStudentName(row["Student Name"]);
+
+            if (admissionNo && !byAdmission.has(admissionNo)) {
+                byAdmission.set(admissionNo, row);
+            }
+
+            if (name && !byName.has(name)) {
+                byName.set(name, row);
+            }
+        });
+
+        scoreRows.forEach(function (student) {
+            const admissionNo = normalizeStudentAdmissionNo(student["Admission No"]);
+            const name = normalizeStudentName(student["Student Name"]);
+
+            let subjectRow = null;
+
+            if (admissionNo) {
+                subjectRow = byAdmission.get(admissionNo) || null;
+            }
+
+            if (!subjectRow && name) {
+                subjectRow = byName.get(name) || null;
+            }
+
+            if (!subjectRow) return;
+
+            student[subject + " 1st CA"] = subjectRow["1st CA"] ?? "";
+            student[subject + " 2nd CA"] = subjectRow["2nd CA"] ?? "";
+            student[subject + " Exams"] = subjectRow["Exams"] ?? "";
+        });
+    });
+}
+
+/* =========================================================
    DETECT SUBJECTS
    ========================================================= */
 
@@ -5024,14 +5178,11 @@ function attachBehaviorData(
         function (row) {
 
             const name =
-                String(
+                normalizeStudentName(
                     row[
                         "Student Name"
-                    ] ||
-                    ""
-                )
-                    .trim()
-                    .toLowerCase();
+                    ]
+                );
 
 
             if (name) {
@@ -5101,14 +5252,11 @@ function attachBehaviorData(
         function (student) {
 
             const name =
-                String(
+                normalizeStudentName(
                     student[
                         "Student Name"
-                    ] ||
-                    ""
-                )
-                    .trim()
-                    .toLowerCase();
+                    ]
+                );
 
 
             const behavior =
