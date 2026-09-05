@@ -219,6 +219,7 @@ select {
    SUBSCRIPTION
    ========================================================= */
 
+
 .subscription-section {
     max-width: 1160px;
     margin: 35px auto;
@@ -454,16 +455,17 @@ select {
     border-radius: 3px;
     background: #f7fafb;
     color: #17324d;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
     text-align: center;
 }
 
 .report-term-session strong {
-    color: #68747e;
+    color: #434b52;
     font-size: 9px;
     margin-right: 3px;
 }
+
 
 /* =========================================================
    SECTION HEADINGS
@@ -540,8 +542,8 @@ select {
 .info-label {
     display: block;
     margin-bottom: 1px;
-    color: #6b7780;
-    font-size: 8px;
+    color: #353739;
+    font-size: 14px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: .4px;
@@ -550,9 +552,12 @@ select {
 .info-item strong {
     display: block;
     color: var(--navy);
-    font-size: 10.5px;
+    font-size: 13px;
     line-height: 1.2;
     text-align: center;
+}
+.info-name strong {
+  font-size: 15px;
 }
 
 .info-label {
@@ -604,7 +609,8 @@ select {
     padding: 4px 4px;
     text-align: center;
     vertical-align: middle;
-    font-size: 9.5px;
+    font-weight: 650;
+    font-size: 11.5px;
 }
 
 .result-table thead th {
@@ -784,7 +790,7 @@ select {
     padding: 5px 3px;
     text-align: center;
     vertical-align: middle;
-    font-size: 8.5px;
+    font-size: 10.5px;
 }
 
 .behavior-table th {
@@ -811,8 +817,8 @@ select {
 .behavior-table .trait-rating {
     color: var(--teal);
     background: #fbfdfd;
-    font-size: 12px;
-    font-weight: 800;
+    font-size: 11.5px;
+    font-weight: 700;
 }
 
 /* =========================================================
@@ -840,8 +846,8 @@ select {
 .comment-label {
     margin-bottom: 4px;
     color: var(--navy);
-    font-size: 8px;
-    font-weight: 800;
+    font-size: 11px;
+    font-weight: 700;
     letter-spacing: .4px;
 }
 
@@ -852,7 +858,7 @@ select {
     border-radius: 3px;
     background: #fff;
     color: #34414a;
-    font-size: 9px;
+    font-size: 10px;
     line-height: 1.35;
 }
 
