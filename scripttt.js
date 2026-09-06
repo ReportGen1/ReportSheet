@@ -2935,31 +2935,76 @@ function attachApplicationEvents() {
     }
 
 
-    if (
-        elementExists(
-            generateReportButton
-        )
-    ) {
+    /* =====================================================
+       GENERATE SINGLE / GENERATE ALL BUTTONS
 
-        generateReportButton.addEventListener(
+       Use delegated click handling so each button still works if
+       the application UI recreates or inserts it after startup.
+       Disable the button while the async call is in flight so a
+       double-click can't fire two overlapping requests, and catch
+       any error so a bad row (or any other unexpected failure)
+       shows the user an alert instead of failing silently with
+       nothing more than a console error.
+       ===================================================== */
+
+    function wireGenerateButton(elementId, handler, errorTitle) {
+
+        document.addEventListener(
             "click",
-            generateSingleReport
-        );
+            function (event) {
 
+                const target =
+                    event.target &&
+                    event.target.closest
+                        ? event.target.closest("#" + elementId)
+                        : null;
+
+                if (!target) return;
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                if (target.disabled) return;
+
+                target.disabled = true;
+
+                Promise.resolve(handler())
+                    .catch(function (error) {
+
+                        console.error(
+                            errorTitle + ":",
+                            error
+                        );
+
+                        alert(
+                            "❌ " + errorTitle + " could not be completed.\n\n" +
+                            (error && error.message
+                                ? error.message
+                                : String(error))
+                        );
+                    })
+                    .finally(function () {
+                        target.disabled = false;
+                    });
+            },
+            true
+        );
     }
 
-
-    if (
-        elementExists(
-            generateAllButton
-        )
-    ) {
-
-        generateAllButton.addEventListener(
-            "click",
-            generateAllReports
+    if (elementExists(generateReportButton)) {
+        wireGenerateButton(
+            "generateReport",
+            generateSingleReport,
+            "Generate Report"
         );
+    }
 
+    if (elementExists(generateAllButton)) {
+        wireGenerateButton(
+            "generateAll",
+            generateAllReports,
+            "Generate All"
+        );
     }
   const backToAppButton = document.getElementById("backToAppButton");
 
@@ -5710,270 +5755,271 @@ function canGenerateReports(
    SERVER AUTHORITATIVE
    ========================================================= */
 
-async function incrementReportCount(amount) {
+async function incrementReportCount(
+    amount
+) {
 
     if (!currentUserId) {
-
-        console.error(
-            "No authenticated user found."
-        );
-
+        console.error("No authenticated user found.");
         return false;
     }
 
+    const reportAmount = Number(amount);
 
-    const reportAmount =
-        Number(amount);
-
-
-    if (
-        !Number.isInteger(reportAmount) ||
-        reportAmount <= 0
-    ) {
-
-        console.error(
-            "Invalid report count:",
-            amount
-        );
-
+    if (!Number.isInteger(reportAmount) || reportAmount <= 0) {
+        console.error("Invalid report count:", amount);
         return false;
     }
 
+    /*
+       IMPORTANT:
+       The browser must NEVER directly increment reports_generated.
+       The database RPC remains the final authority for both paid
+       subscriptions and the free trial.
 
-    try {
+       This function refreshes the authenticated user and the current
+       subscription immediately before claiming. That prevents a newly
+       created/updated trial row from being stale in the browser.
+    */
+    async function refreshAllowanceState() {
+        const sessionResult =
+            await supabaseClient.auth.getSession();
 
-        const {
-            data,
-            error
-        } =
+        if (
+            sessionResult.error ||
+            !sessionResult.data ||
+            !sessionResult.data.session ||
+            !sessionResult.data.session.user
+        ) {
+            throw new Error("Authenticated session could not be confirmed.");
+        }
+
+        const user = sessionResult.data.session.user;
+        currentUserId = user.id;
+
+        const subscriptionResult =
+            await supabaseClient
+                .from("subscriptions")
+                .select("*")
+                .eq("user_id", user.id)
+                .eq("website_id", WEBSITE_ID)
+                .order("created_at", {
+                    ascending: false
+                })
+                .limit(1)
+                .maybeSingle();
+
+        if (subscriptionResult.error) {
+            throw subscriptionResult.error;
+        }
+
+        if (!subscriptionResult.data) {
+            throw new Error(
+                "No subscription record was found for this website."
+            );
+        }
+
+        currentSubscription = subscriptionResult.data;
+
+        currentSubscriptionPlan = String(
+            currentSubscription.plan ||
+            currentSubscription.subscription_plan ||
+            currentSubscription.package ||
+            ""
+        ).trim().toLowerCase();
+
+        reportsGenerated =
+            Number(currentSubscription.reports_generated) || 0;
+
+        return currentSubscription;
+    }
+
+    async function claimOnce() {
+        const { data, error } =
             await supabaseClient.rpc(
                 "claim_report_allowance",
                 {
-                    p_user_id:
-                        currentUserId,
-
-                    p_website_id:
-                        WEBSITE_ID,
-
-                    p_amount:
-                        reportAmount
+                    p_user_id: currentUserId,
+                    p_website_id: WEBSITE_ID,
+                    p_amount: reportAmount
                 }
             );
 
-
-        /* -------------------------------------------------
-           RPC ERROR
-           ------------------------------------------------- */
-
         if (error) {
-
             console.error(
                 "Unable to claim report allowance:",
                 error
             );
 
-            return false;
+            return {
+                ok: false,
+                error: error
+            };
         }
-
-
-        /* -------------------------------------------------
-           The RPC returns a TABLE, therefore Supabase
-           normally returns an array containing one row.
-           ------------------------------------------------- */
 
         const result =
-            Array.isArray(data)
-                ? data[0]
-                : data;
+            Array.isArray(data) ? data[0] : data;
 
-
-        if (!result) {
-
-            console.error(
-                "Report allowance RPC returned no result:",
-                data
-            );
-
-            return false;
-        }
-
-
-        /* -------------------------------------------------
-           Read the server-authoritative result
-           ------------------------------------------------- */
-
+        /* Accept a normal boolean as well as a stringified boolean. */
         const success =
-            result.success === true ||
-            String(result.success)
-                .toLowerCase() === "true";
-
-
-        const claimedAmount =
-            Number(
-                result.claimed_amount
-            ) || 0;
-
-
-        const serverReportsGenerated =
-            Number(
-                result.reports_generated
+            result &&
+            (
+                result.success === true ||
+                String(result.success).toLowerCase() === "true"
             );
-
-
-        const serverRemaining =
-            Number(
-                result.remaining
-            );
-
-
-        /* -------------------------------------------------
-           Server rejected the request
-           ------------------------------------------------- */
 
         if (!success) {
-
-            console.warn(
-                "Report allowance claim rejected:",
+            console.error(
+                "Report allowance claim was rejected by the server:",
                 result
             );
 
-            if (
-                Number.isFinite(
-                    serverReportsGenerated
-                )
-            ) {
-
-                reportsGenerated =
-                    serverReportsGenerated;
-            }
-
-
-            updateReportStatus();
-
-            return false;
+            return {
+                ok: false,
+                result: result
+            };
         }
 
+        const claimedAmount =
+            Number(result.claimed_amount);
 
-        /* -------------------------------------------------
-           IMPORTANT:
-           The server must confirm the FULL amount requested.
-           This prevents Generate All from locally assuming
-           reports were charged when the server only granted
-           part of the request.
-           ------------------------------------------------- */
-
-        if (
-            claimedAmount !==
-            reportAmount
-        ) {
-
+        if (claimedAmount !== reportAmount) {
             console.error(
-                "Server granted a different number of reports.",
+                "Server did not claim the requested number of reports:",
                 {
-                    requested:
-                        reportAmount,
-
-                    claimed:
-                        claimedAmount,
-
-                    serverResult:
-                        result
+                    requested: reportAmount,
+                    result: result
                 }
             );
 
-
-            if (
-                Number.isFinite(
-                    serverReportsGenerated
-                )
-            ) {
-
-                reportsGenerated =
-                    serverReportsGenerated;
-            }
-
-
-            updateReportStatus();
-
-            return false;
+            return {
+                ok: false,
+                result: result
+            };
         }
 
+        /* The server's count is authoritative. */
+        const authoritativeCount =
+            Number(result.reports_generated);
 
-        /* -------------------------------------------------
-           ACCEPT SERVER-AUTHORITATIVE COUNT
-           ------------------------------------------------- */
-
-        if (
-            Number.isFinite(
-                serverReportsGenerated
-            )
-        ) {
-
-            reportsGenerated =
-                serverReportsGenerated;
-
+        if (Number.isFinite(authoritativeCount)) {
+            reportsGenerated = authoritativeCount;
         } else {
-
-            console.error(
-                "Server did not return a valid reports_generated value."
-            );
-
-            return false;
+            reportsGenerated += reportAmount;
         }
 
-
-        /* -------------------------------------------------
-           Refresh the local subscription object so the
-           displayed remaining allowance agrees with the
-           server.
-           ------------------------------------------------- */
-
+        /* Keep the local subscription object synchronized. */
         if (currentSubscription) {
-
-            currentSubscription =
-                {
-                    ...currentSubscription,
-
-                    reports_generated:
-                        reportsGenerated
-                };
+            currentSubscription = {
+                ...currentSubscription,
+                reports_generated: reportsGenerated
+            };
         }
-
-
-        /* -------------------------------------------------
-           Optional diagnostic
-           ------------------------------------------------- */
-
-        console.log(
-            "Report allowance successfully claimed:",
-            {
-                requested:
-                    reportAmount,
-
-                claimed:
-                    claimedAmount,
-
-                reportsGenerated:
-                    reportsGenerated,
-
-                remaining:
-                    serverRemaining
-            }
-        );
-
 
         updateReportStatus();
 
-        return true;
+        return {
+            ok: true,
+            result: result
+        };
+    }
 
+    try {
+        /*
+           Refresh first. This is especially important for the free trial,
+           because the trial subscription can be created by the Supabase
+           auth trigger after account creation.
+        */
+        await refreshAllowanceState();
 
-    } catch (error) {
+        /*
+           Confirm that the locally visible subscription is actually usable.
+           This is only a pre-check; the RPC remains authoritative.
+        */
+        const plan = String(
+            currentSubscription?.plan ||
+            currentSubscription?.subscription_plan ||
+            currentSubscription?.package ||
+            ""
+        ).trim().toLowerCase();
 
-        console.error(
-            "Report count error:",
-            error
+        const status = String(
+            currentSubscription?.status ||
+            ""
+        ).trim().toLowerCase();
+
+        const expiry = new Date(
+            currentSubscription?.expires_at || ""
         );
 
+        const active =
+            Number.isFinite(expiry.getTime()) &&
+            expiry > new Date();
+
+        const validPaidStatuses = [
+            "paid",
+            "active",
+            "success",
+            "successful",
+            "completed"
+        ];
+
+        const valid =
+            (
+                validPaidStatuses.includes(status) ||
+                (plan === FREE_TRIAL_PLAN && status === FREE_TRIAL_STATUS)
+            ) &&
+            active;
+
+        if (!valid) {
+            console.error(
+                "Allowance claim stopped because the subscription is not active:",
+                {
+                    plan: plan,
+                    status: status,
+                    expires_at: currentSubscription?.expires_at
+                }
+            );
+            updateReportStatus();
+            return false;
+        }
+
+        /* First server-authoritative claim. */
+        let claimResult = await claimOnce();
+
+        if (claimResult.ok) {
+            return true;
+        }
+
+        /*
+           One controlled retry after a fresh subscription/session read.
+           This handles timing races immediately after a trial row is created
+           or after the subscription state changes. It cannot over-charge:
+           the RPC itself decides whether the requested amount is claimable.
+        */
+        await new Promise(function (resolve) {
+            setTimeout(resolve, 350);
+        });
+
+        await refreshAllowanceState();
+        claimResult = await claimOnce();
+
+        if (claimResult.ok) {
+            return true;
+        }
+
+        console.error(
+            "Final report allowance claim failure:",
+            claimResult.error || claimResult.result || claimResult
+        );
+
+        return false;
+
+    } catch (error) {
+        console.error(
+            "Report allowance error:",
+            error
+        );
         return false;
     }
 }
@@ -6003,6 +6049,28 @@ async function generateSingleReport() {
     /* Only a genuinely new version of this report consumes allowance. */
     if (!alreadyGenerated && !canGenerateReports(1)) return;
 
+    /*
+       IMPORTANT:
+       For a brand-new report, the SERVER must confirm the allowance
+       BEFORE anything is rendered — mirrors Generate All, so a report
+       is never shown to the user unless the server actually authorized it.
+    */
+    if (!alreadyGenerated) {
+
+        const countUpdated = await incrementReportCount(1);
+
+        if (!countUpdated) {
+            alert(
+                "❌ The server did not approve this report.\n\n" +
+                "No report was generated. Please refresh the page and check your subscription before trying again."
+            );
+            updateReportStatus();
+            return;
+        }
+
+        markReportsAsGenerated([fingerprint]);
+    }
+
     const report = createReport(student);
 
     if (reportContainer) {
@@ -6011,23 +6079,24 @@ async function generateSingleReport() {
         reportContainer.scrollIntoView({ behavior: "smooth" });
     }
 
+    updateReportStatus();
+
     if (alreadyGenerated) {
-        updateReportStatus();
-        return;
-    }
 
-    const countUpdated = await incrementReportCount(1);
-
-    if (countUpdated) {
-        markReportsAsGenerated([fingerprint]);
-        saveGeneratedReports();
-    } else {
         alert(
-            "⚠️ The report was displayed, but the server could not update the usage count. Please refresh and check your subscription before generating another new report."
+            "✅ Report displayed successfully.\n\n" +
+            "This report was already generated on this website, so no allowance was used."
+        );
+
+    } else {
+
+        const totalAvailable = getReportLimit() + getCarriedOverReports();
+
+        alert(
+            "✅ Report generated successfully.\n\n" +
+            "Reports generated: " + reportsGenerated + " / " + totalAvailable
         );
     }
-
-    updateReportStatus();
 }
 
 
@@ -6222,85 +6291,31 @@ async function generateAllReports() {
     }
 }
 
-function updateTemporaryGenerationMessage(
-    generated,
-    total
-) {
+function updateTemporaryGenerationMessage(generated, total) {
 
-    if (!reportContainer) {
+    let progress = document.getElementById("generationProgress");
 
-        return;
-
+    if (!progress) {
+        progress = document.createElement("div");
+        progress.id = "generationProgress";
+        progress.style.position = "fixed";
+        progress.style.top = "20px";
+        progress.style.left = "50%";
+        progress.style.transform = "translateX(-50%)";
+        progress.style.zIndex = "99999";
+        progress.style.padding = "12px 18px";
+        progress.style.borderRadius = "8px";
+        progress.style.background = "#1f2937";
+        progress.style.color = "#fff";
+        progress.style.fontSize = "14px";
+        progress.style.fontWeight = "600";
+        progress.style.boxShadow = "0 4px 12px rgba(0,0,0,0.25)";
+        progress.style.textAlign = "center";
+        document.body.appendChild(progress);
     }
 
-
-    const existing =
-        document.getElementById(
-            "generationProgress"
-        );
-
-
-    if (!existing) {
-
-        const progress =
-            document.createElement(
-                "div"
-            );
-
-
-        progress.id =
-            "generationProgress";
-
-
-        progress.style.padding =
-            "10px";
-
-
-        progress.style.marginBottom =
-            "10px";
-
-
-        progress.style.fontWeight =
-            "bold";
-
-
-        progress.innerHTML =
-
-            "⏳ Generating reports: " +
-
-            generated +
-
-            " / " +
-
-            total;
-
-
-        /* Keep progress OUTSIDE the generated report markup.
-           Putting it inside reportContainer makes it become the
-           first report and causes it to print on the first page. */
-        if (reportSection && reportContainer.parentElement === reportSection) {
-            reportSection.insertBefore(progress, reportContainer);
-        } else if (reportSection) {
-            reportSection.insertBefore(progress, reportContainer);
-        } else {
-            reportContainer.parentElement?.insertBefore(progress, reportContainer);
-        }
-
-
-    } else {
-
-        existing.innerHTML =
-
-            "⏳ Generating reports: " +
-
-            generated +
-
-            " / " +
-
-            total;
-
-    }
-
+    progress.textContent =
+        "⏳ Generating reports: " + generated + " / " + total;
 }
 
 
