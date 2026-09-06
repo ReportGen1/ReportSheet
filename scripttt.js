@@ -7189,7 +7189,7 @@ async function verifyPaystackPayment(
             await supabaseClient
                 .functions
                 .invoke(
-                    "verify-paystack-payment-websites",
+                    "paystack-verification",
                     {
 
                         body: {
