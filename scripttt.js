@@ -6053,17 +6053,16 @@ async function generateAllReports() {
     const remaining = Math.max(totalAvailable - reportsGenerated, 0);
 
     /*
-       Generate All is deliberately mode-independent. Reports that were
-       already charged in Generate Student mode are not charged again,
-       and vice versa.
+       Generate All and Generate Student use the same local fingerprint ledger.
+       A report already charged for this subscription is never charged again.
     */
     const reportItems = students.map(function (student) {
+        const fingerprint = getReportGenerationFingerprint(student);
+
         return {
             student: student,
-            fingerprint: getReportGenerationFingerprint(student),
-            alreadyGenerated: hasReportBeenGenerated(
-                getReportGenerationFingerprint(student)
-            )
+            fingerprint: fingerprint,
+            alreadyGenerated: hasReportBeenGenerated(fingerprint)
         };
     });
 
@@ -6071,17 +6070,48 @@ async function generateAllReports() {
         return !item.alreadyGenerated;
     });
 
-    if (remaining <= 0 && newItems.length > 0) {
+    /* Nothing new needs to be charged. */
+    if (newItems.length === 0) {
+        if (reportContainer) {
+            reportContainer.innerHTML = "";
+
+            reportItems.forEach(function (item) {
+                reportContainer.insertAdjacentHTML(
+                    "beforeend",
+                    createReport(item.student)
+                );
+            });
+
+            saveGeneratedReports();
+            reportContainer.scrollIntoView({ behavior: "smooth" });
+        }
+
+        updateReportStatus();
+
+        alert(
+            "ℹ️ All selected student reports have already been generated for this subscription.\n\n" +
+            "No allowance was deducted."
+        );
+
+        return;
+    }
+
+    if (remaining <= 0) {
         alert(
             "⚠️ REPORT GENERATION LIMIT REACHED\n\n" +
             "Subscription: " + getPlanDisplayName() + "\n" +
             "Reports generated: " + reportsGenerated + " / " + totalAvailable +
             "\n\nPlease renew or upgrade your subscription to generate more reports."
         );
+
         updateReportStatus();
         return;
     }
 
+    /*
+       Only reports for which allowance exists may be generated.
+       The database remains the final authority.
+    */
     const newItemsAllowed = newItems.slice(0, remaining);
     const blockedNewItems = newItems.length > newItemsAllowed.length;
 
@@ -6099,81 +6129,138 @@ async function generateAllReports() {
 
     if (!confirmation) return;
 
-    if (reportContainer) reportContainer.innerHTML = "";
+    if (reportContainer) {
+        reportContainer.innerHTML = "";
+    }
 
-    const allowedNewFingerprints = new Set(
-        newItemsAllowed.map(function (item) { return item.fingerprint; })
-    );
+    /*
+       IMPORTANT FIX:
+       Claim allowance BEFORE displaying each new report batch.
 
-    const fingerprintsToCharge = [];
+       Generate All previously built/displayed all reports first and then
+       attempted one large allowance update. If that large RPC failed or
+       returned a different amount, the reports could appear without being
+       charged.
+
+       We now use small batches (maximum 10 reports). Each batch is charged
+       successfully by the server before its reports are displayed. This
+       makes Generate All reliable for 4, 25, 100, or more students and
+       prevents unpaid reports from being displayed.
+    */
+    const BATCH_SIZE = 10;
     let renderedCount = 0;
+    let chargedCount = 0;
+    let generationStopped = false;
 
-    for (let i = 0; i < reportItems.length; i++) {
-        const item = reportItems[i];
+    /* First render reports that were already generated in this subscription. */
+    const existingItems = reportItems.filter(function (item) {
+        return item.alreadyGenerated;
+    });
 
-        /* Existing reports are safe to render again without charging.
-           New reports are rendered only when allowance is available. */
-        if (!item.alreadyGenerated && !allowedNewFingerprints.has(item.fingerprint)) {
-            continue;
-        }
-
-        const report = createReport(item.student);
+    existingItems.forEach(function (item) {
         if (reportContainer) {
-            reportContainer.insertAdjacentHTML("beforeend", report);
+            reportContainer.insertAdjacentHTML(
+                "beforeend",
+                createReport(item.student)
+            );
         }
 
         renderedCount++;
+    });
 
-        if (!item.alreadyGenerated) {
-            fingerprintsToCharge.push(item.fingerprint);
-        }
+    /* Charge and render genuinely new reports in batches. */
+    for (let start = 0; start < newItemsAllowed.length; start += BATCH_SIZE) {
 
-        if (renderedCount % 10 === 0) {
-            updateTemporaryGenerationMessage(
-                renderedCount,
-                students.length
-            );
-
-            await new Promise(function (resolve) {
-                setTimeout(resolve, 0);
-            });
-        }
-    }
-
-    const generationProgress = document.getElementById("generationProgress");
-    if (generationProgress) generationProgress.remove();
-
-    if (reportContainer) saveGeneratedReports();
-
-    if (fingerprintsToCharge.length > 0) {
-        const countUpdated = await incrementReportCount(
-            fingerprintsToCharge.length
+        const batch = newItemsAllowed.slice(
+            start,
+            start + BATCH_SIZE
         );
 
-        if (countUpdated) {
-            markReportsAsGenerated(fingerprintsToCharge);
-            saveGeneratedReports();
-        } else {
+        const batchAmount = batch.length;
+
+        updateTemporaryGenerationMessage(
+            chargedCount,
+            newItemsAllowed.length
+        );
+
+        const countUpdated = await incrementReportCount(batchAmount);
+
+        if (!countUpdated) {
+            generationStopped = true;
+
             alert(
-                "⚠️ Reports were displayed, but the server could not update the usage count. Please refresh and check your subscription before generating more reports."
+                "⚠️ Generate All stopped because the server could not confirm allowance for the next " +
+                batchAmount + " report(s).\n\n" +
+                "Reports already charged in this operation: " + chargedCount + "\n" +
+                "Reports generated in this operation: " + chargedCount +
+                "\n\nPlease refresh the page and check your subscription before trying again."
             );
+
+            break;
         }
+
+        /* The server has confirmed the full batch before we display it. */
+        batch.forEach(function (item) {
+            if (reportContainer) {
+                reportContainer.insertAdjacentHTML(
+                    "beforeend",
+                    createReport(item.student)
+                );
+            }
+
+            renderedCount++;
+        });
+
+        const batchFingerprints = batch.map(function (item) {
+            return item.fingerprint;
+        });
+
+        markReportsAsGenerated(batchFingerprints);
+        chargedCount += batchAmount;
+
+        if (reportContainer) {
+            saveGeneratedReports();
+        }
+
+        updateReportStatus();
+
+        /* Yield to the browser so larger batches remain responsive. */
+        await new Promise(function (resolve) {
+            setTimeout(resolve, 0);
+        });
+    }
+
+    const generationProgress =
+        document.getElementById("generationProgress");
+
+    if (generationProgress) {
+        generationProgress.remove();
+    }
+
+    if (reportContainer) {
+        saveGeneratedReports();
+        reportContainer.scrollIntoView({ behavior: "smooth" });
     }
 
     updateReportStatus();
 
+    if (generationStopped) {
+        return;
+    }
+
     if (blockedNewItems) {
         alert(
             "⚠️ Generation stopped at your available report limit.\n\n" +
-            "New reports charged this operation: " + fingerprintsToCharge.length + "\n" +
-            "Reports generated: " + reportsGenerated + " / " + totalAvailable + "\n\n" +
-            "Renew or upgrade to generate the remaining new reports."
+            "Reports displayed: " + renderedCount + "\n" +
+            "New reports charged this operation: " + chargedCount + "\n" +
+            "Total reports generated: " + reportsGenerated + " / " + totalAvailable +
+            "\n\nRenew or upgrade to generate the remaining new reports."
         );
     } else {
         alert(
             "✅ Reports generated successfully.\n\n" +
             "Reports displayed: " + renderedCount + "\n" +
-            "New reports charged: " + fingerprintsToCharge.length + "\n" +
+            "New reports charged: " + chargedCount + "\n" +
             "Total reports generated: " + reportsGenerated + " / " + totalAvailable
         );
     }
