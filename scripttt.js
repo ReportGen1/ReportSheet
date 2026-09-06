@@ -3605,6 +3605,24 @@ function downloadExcelTemplate() {
             "Position"
         );
 
+        scoresHeaders.push(
+            "Class Teacher's Comment"
+        );
+
+        scoresHeaders.push(
+            "Principal's Comment"
+        );
+
+        behavioralTraits.forEach(
+            function (trait) {
+
+                scoresHeaders.push(
+                    trait
+                );
+
+            }
+        );
+
 
         const scoresData = [
             scoresHeaders
@@ -3669,6 +3687,16 @@ function downloadExcelTemplate() {
 
             row.push("");
 
+            row.push("");
+
+            row.push("");
+
+            behavioralTraits.forEach(
+                function () {
+                    row.push("");
+                }
+            );
+
 
             scoresData.push(
                 row
@@ -3715,8 +3743,20 @@ function downloadExcelTemplate() {
 
             { wch: 9 },
             { wch: 9 },
-            { wch: 9 }
+            { wch: 9 },
+            { wch: 18 },
+            { wch: 18 }
 
+        );
+
+        behavioralTraits.forEach(
+            function () {
+
+                scoresSheet["!cols"].push(
+                    { wch: 10 }
+                );
+
+            }
         );
 
 
@@ -3926,113 +3966,6 @@ function downloadExcelTemplate() {
                 );
 
             }
-        );
-
-
-        /* =================================================
-           BEHAVIORAL TRAITS SHEET
-           ================================================= */
-
-        const behaviorHeaders = [
-
-            "Adm No",
-            "Student Name"
-
-        ];
-
-
-        behavioralTraits.forEach(
-            function (trait) {
-
-                behaviorHeaders.push(
-                    trait
-                );
-
-            }
-        );
-
-
-        behaviorHeaders.push(
-            "Class Teacher's Comment"
-        );
-
-        behaviorHeaders.push(
-            "Principal's Comment"
-        );
-
-
-        const behaviorData = [
-            behaviorHeaders
-        ];
-
-
-        for (
-            let i = 1;
-            i <= TEMPLATE_STUDENT_ROWS;
-            i++
-        ) {
-
-            behaviorData.push([
-
-                i === 1
-                    ? "001"
-                    : "",
-
-                i === 1
-                    ? "Example Student"
-                    : "",
-
-                "",
-                "",
-                "",
-                "",
-                "",
-
-                "",
-
-                ""
-
-            ]);
-
-        }
-
-
-        const behaviorSheet =
-            XLSX.utils.aoa_to_sheet(
-                behaviorData
-            );
-
-
-        behaviorSheet["!cols"] = [
-
-            { wch: 7 },
-            { wch: 14 },
-
-            { wch: 9 },
-            { wch: 9 },
-            { wch: 9 },
-            { wch: 9 },
-            { wch: 9 },
-
-            { wch: 20 },
-            { wch: 20 }
-
-        ];
-
-
-        behaviorSheet["!freeze"] = {
-
-            xSplit: 3,
-
-            ySplit: 1
-
-        };
-
-
-        XLSX.utils.book_append_sheet(
-            workbook,
-            behaviorSheet,
-            "Behavioral Traits"
         );
 
 
@@ -4376,7 +4309,7 @@ function downloadExcelTemplate() {
 
             schoolSubjects.length +
 
-            " subject sheet(s), House, 1st CA, 2nd CA, Exams, Overall Total, Average, Position, Behavioral Traits and Comments."
+            " subject sheet(s). Comments and all Behavioral Traits are now on the Scores sheet after Position."
 
         );
 
@@ -4630,32 +4563,49 @@ function handleExcelUpload(event) {
 
                 /* =========================
                    BEHAVIOR
+                   =========================
+
+                   New templates store these fields directly in Scores.
+                   Keep the old Behavioral Traits sheet as a fallback so
+                   older templates already downloaded by users still work.
                    ========================= */
 
-                const behaviorSheet =
-                    workbook.Sheets[
-                        "Behavioral Traits"
-                    ];
+                const behaviorColumns = [
+                    "Class Teacher's Comment",
+                    "Principal's Comment"
+                ].concat(behavioralTraits);
 
+                const scoresContainBehaviorColumns =
+                    behaviorColumns.some(function (column) {
+                        return Object.prototype.hasOwnProperty.call(
+                            actualRows[0] || {},
+                            column
+                        );
+                    });
 
-                if (behaviorSheet) {
+                if (scoresContainBehaviorColumns) {
+                    actualRows.forEach(function (student) {
+                        student.__behavior = {};
 
-                    attachBehaviorData(
-                        actualRows,
-                        behaviorSheet
-                    );
-
+                        behaviorColumns.forEach(function (column) {
+                            student.__behavior[column] =
+                                student[column] ?? "";
+                        });
+                    });
                 } else {
+                    const behaviorSheet =
+                        workbook.Sheets["Behavioral Traits"];
 
-                    actualRows.forEach(
-                        function (student) {
-
-                            student.__behavior =
-                                {};
-
-                        }
-                    );
-
+                    if (behaviorSheet) {
+                        attachBehaviorData(
+                            actualRows,
+                            behaviorSheet
+                        );
+                    } else {
+                        actualRows.forEach(function (student) {
+                            student.__behavior = {};
+                        });
+                    }
                 }
 
 
