@@ -701,6 +701,8 @@ let generateAllButton;
 
 let reportContainer;
 
+let printReportButton;
+
 let schoolNameInput;
 
 let schoolAddressInput;
@@ -839,6 +841,11 @@ function initializeElements() {
         document.getElementById(
             "reportContainer"
         );
+
+    printReportButton =
+    document.getElementById(
+        "printReportButton"
+    );
 
 
     schoolNameInput =
@@ -1211,6 +1218,15 @@ function showApp() {
    ========================================================= */
 
 function attachAuthenticationEvents() {
+
+    if (elementExists(printReportButton)) {
+    printReportButton.addEventListener(
+        "click",
+        function () {
+            window.print();
+        }
+    );
+    }
 
 
     /* =========================
