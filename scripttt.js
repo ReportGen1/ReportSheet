@@ -3963,7 +3963,8 @@ function downloadExcelTemplate() {
                         "Student Name",
                         "1st CA",
                         "2nd CA",
-                        "Exams"
+                        "Exams",
+                        "Match Key"
                     ]
 
                 ];
@@ -3987,6 +3988,7 @@ function downloadExcelTemplate() {
 
                         "",
                         "",
+                        "",
                         ""
 
                     ]);
@@ -4000,13 +4002,41 @@ function downloadExcelTemplate() {
                     );
 
 
+                /* Hidden "Match Key" column (F): a normalized copy of the
+                   Student Name (extra/leading/trailing spaces collapsed,
+                   non-breaking spaces and invisible characters stripped)
+                   that the main Scores sheet matches against instead of
+                   the raw Student Name, so stray spaces typed while
+                   entering scores don't break the lookup. */
+
+                for (
+                    let row = 2;
+                    row <= TEMPLATE_STUDENT_ROWS + 1;
+                    row++
+                ) {
+
+                    subjectSheet[
+                        "F" + row
+                    ] = {
+
+                        t: "str",
+
+                        f:
+                            `TRIM(CLEAN(SUBSTITUTE(B${row},CHAR(160)," ")))`
+
+                    };
+
+                }
+
+
                 subjectSheet["!cols"] = [
 
                     { wch: 7 },
                     { wch: 14 },
                     { wch: 6 },
                     { wch: 6 },
-                    { wch: 6 }
+                    { wch: 6 },
+                    { wch: 10, hidden: true }
 
                 ];
 
@@ -4104,7 +4134,7 @@ function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,2,FALSE),""))`
+                            `IF($B${row}="","",IFERROR(INDEX('${safeSheetName}'!$C:$C,MATCH(TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0)),""))`
 
                     };
 
@@ -4117,7 +4147,7 @@ function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,3,FALSE),""))`
+                            `IF($B${row}="","",IFERROR(INDEX('${safeSheetName}'!$D:$D,MATCH(TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0)),""))`
 
                     };
 
@@ -4130,7 +4160,7 @@ function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(VLOOKUP($B${row},'${safeSheetName}'!$B:$E,4,FALSE),""))`
+                            `IF($B${row}="","",IFERROR(INDEX('${safeSheetName}'!$E:$E,MATCH(TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0)),""))`
 
                     };
 
@@ -4247,7 +4277,7 @@ function downloadExcelTemplate() {
                     .map(
                         function (safeSheetName) {
 
-                            return `COUNTIF('${safeSheetName}'!$B:$B,$B${row})`;
+                            return `COUNTIF('${safeSheetName}'!$F:$F,TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))))`;
 
                         }
                     )
