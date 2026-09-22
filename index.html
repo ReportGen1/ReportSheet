@@ -81,7 +81,7 @@
 >
 
     <h2>
-        Student Report Sheet <br>Generator
+       Student Report Sheet <br>Generator
     </h2>
 
     <p id="authMessage">
@@ -94,15 +94,14 @@
         id="email"
         placeholder="Email address"
     >
-    <p></p>
+  <p></p>
 
     <input
         type="password"
         id="password"
         placeholder="Password"
     >
-    <p></p>
-
+<p></p>
     <button id="signUpButton">
         Create Account
     </button>
@@ -666,6 +665,89 @@
 
 
             <!-- =================================
+                 PUBLISH RESULTS ONLINE
+            ================================= -->
+
+            <section
+                class="card"
+                id="publishResultsSection"
+            >
+
+                <h2>
+                    🌐 Publish Results Online
+                </h2>
+
+                <p>
+                    Publish a student's result to the secure Online Result Checker
+                    so the student or parent can check the result using the
+                    generated PIN. The result will use the information already
+                    loaded into this report generator.
+                </p>
+
+                <div class="selection-area">
+
+                    <label for="publishStudentSelect">
+                        Select Student to Publish:
+                    </label>
+
+                    <select id="publishStudentSelect">
+                        <option value="">
+                            -- Select Student --
+                        </option>
+                    </select>
+
+                    <button
+                        type="button"
+                        id="publishSingleResult"
+                    >
+                        Publish Selected Result
+                    </button>
+
+                    <button
+                        type="button"
+                        id="publishAllResults"
+                    >
+                        Publish All Results
+                    </button>
+
+                </div>
+
+                <p
+                    id="publishResultsStatus"
+                    style="margin-top:15px;"
+                ></p>
+
+                <div
+                    id="publishedResultInfo"
+                    style="display:none; margin-top:15px;"
+                >
+                </div>
+
+            </section>
+
+
+            <!-- RESULT CHECKER LINK -->
+            <div style="margin-top: 20px; text-align: center;">
+
+                <p>
+                    Students and parents can check published results here:
+                </p>
+
+                <a
+                    href="result-checker.html"
+                    target="_blank"
+                    style="display: inline-block; text-decoration: none;"
+                >
+                    <button type="button">
+                        🔎 Check Result Online
+                    </button>
+                </a>
+
+            </div>
+
+
+
+            <!-- =================================
                  REPORT OUTPUT
             ================================= -->
 
@@ -679,6 +761,7 @@
 
 
         </main>
+
 
 
 <!-- =========================================
