@@ -6373,6 +6373,15 @@ function getPublishResultData(student) {
                 : Number(positionValue))
             : "";
 
+    const classSize =
+        students.filter(
+            function (s) {
+                return String(
+                    s["Student Name"] || ""
+                ).trim() !== "";
+            }
+        ).length;
+
     const behavior =
         student.__behavior || {};
 
@@ -6403,6 +6412,7 @@ function getPublishResultData(student) {
                 student["Term"] || "",
             average: Number(average.toFixed(2)),
             position: position,
+            class_size: classSize,
             attendance:
                 behavior["Attendance"] || "",
             teacher_comment:
@@ -6565,6 +6575,8 @@ async function publishOneStudentResult(student) {
                             : (isNaN(Number(resultData.result.position))
                                 ? null
                                 : Number(resultData.result.position)),
+                    p_class_size:
+                        Number(resultData.result.class_size) || null,
                     p_attendance: resultData.result.attendance || null,
                     p_teacher_comment: resultData.result.teacher_comment || null,
                     p_principal_comment: resultData.result.principal_comment || null,
