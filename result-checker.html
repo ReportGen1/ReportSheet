@@ -888,6 +888,17 @@
             <div class="summary-box">
 
                 <strong>
+                    Class Size
+                </strong>
+
+                <span id="resultClassSize"></span>
+
+            </div>
+
+
+            <div class="summary-box">
+
+                <strong>
                     Attendance
                 </strong>
 
@@ -1314,6 +1325,12 @@ function displayResult(
         "resultPosition"
     ).textContent =
         result.position ?? "";
+
+
+    document.getElementById(
+        "resultClassSize"
+    ).textContent =
+        result.class_size ?? "";
 
 
     document.getElementById(
