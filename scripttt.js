@@ -3708,6 +3708,11 @@ function downloadExcelTemplate() {
                     " Exams"
                 );
 
+                scoresHeaders.push(
+                    subject +
+                    " Total"
+                );
+
             }
         );
 
@@ -3796,6 +3801,8 @@ function downloadExcelTemplate() {
 
                     row.push("");
 
+                    row.push("");
+
                 }
             );
 
@@ -3848,6 +3855,7 @@ function downloadExcelTemplate() {
 
                 scoresSheet["!cols"].push(
 
+                    { wch: 10 },
                     { wch: 10 },
                     { wch: 10 },
                     { wch: 10 }
@@ -3998,6 +4006,10 @@ function downloadExcelTemplate() {
             {};
 
 
+        const subjectTotalLetters =
+            [];
+
+
         schoolSubjects.forEach(
             function (subject) {
 
@@ -4145,7 +4157,7 @@ function downloadExcelTemplate() {
                     8 +
                     (
                         subjectIndex *
-                        3
+                        4
                     );
 
 
@@ -4157,6 +4169,11 @@ function downloadExcelTemplate() {
                 const examsColumn =
                     firstCAColumn +
                     2;
+
+
+                const totalColumn =
+                    firstCAColumn +
+                    3;
 
 
                 const firstCALetter =
@@ -4175,6 +4192,17 @@ function downloadExcelTemplate() {
                     XLSX.utils.encode_col(
                         examsColumn - 1
                     );
+
+
+                const totalLetter =
+                    XLSX.utils.encode_col(
+                        totalColumn - 1
+                    );
+
+
+                subjectTotalLetters.push(
+                    totalLetter
+                );
 
 
                 for (
@@ -4222,6 +4250,23 @@ function downloadExcelTemplate() {
 
                     };
 
+
+                    /* Per-subject Total: sum of that subject's 1st CA,
+                       2nd CA and Exams for this row. Blank (not "0")
+                       when the subject isn't offered, i.e. all three
+                       component cells are blank. */
+                    scoresSheet[
+                        totalLetter +
+                        row
+                    ] = {
+
+                        t: "n",
+
+                        f:
+                            `IF(AND(${firstCALetter}${row}="",${secondCALetter}${row}="",${examsLetter}${row}=""),"",SUM(${firstCALetter}${row}:${examsLetter}${row}))`
+
+                    };
+
                 }
 
             }
@@ -4240,7 +4285,7 @@ function downloadExcelTemplate() {
             firstSubjectColumn +
             (
                 schoolSubjects.length *
-                3
+                4
             ) -
             1;
 
@@ -4312,6 +4357,24 @@ function downloadExcelTemplate() {
             row++
         ) {
 
+            /* Sum only each subject's Total column (not the raw
+               CA/Exams columns too), since those are already folded
+               into each subject's Total — summing the whole
+               firstSubjectLetter:lastSubjectLetter range here would
+               double-count every score. */
+            const overallTotalFormula =
+                subjectTotalLetters
+                    .map(
+                        function (letter) {
+
+                            return letter +
+                                row;
+
+                        }
+                    )
+                    .join(",");
+
+
             scoresSheet[
                 overallTotalLetter +
                 row
@@ -4320,7 +4383,7 @@ function downloadExcelTemplate() {
                 t: "n",
 
                 f:
-                    `IF($B${row}="","",SUM(${firstSubjectLetter}${row}:${lastSubjectLetter}${row}))`
+                    `IF($B${row}="","",SUM(${overallTotalFormula}))`
 
             };
 
