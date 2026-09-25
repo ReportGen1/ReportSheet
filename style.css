@@ -1019,6 +1019,16 @@ select {
     }
 }
 @media print {
+  .master-sheet-wrapper {
+    page: master-sheet;
+  }
+
+  @page master-sheet {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  /* everything else stays the same */
   .master-sheet-table-scroll {
     overflow: visible !important;
   }
@@ -1055,11 +1065,6 @@ select {
   .master-sheet-title {
     margin: 0 0 6px 0;
     font-size: 14px;
-  }
-
-  @page {
-    size: A4 landscape;
-    margin: 8mm;
   }
 }
 
