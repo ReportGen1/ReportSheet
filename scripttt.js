@@ -698,6 +698,7 @@ let studentSelect;
 let generateReportButton;
 
 let generateAllButton;
+let generateMasterSheetButton;
 
 let reportContainer;
 
@@ -847,6 +848,11 @@ function initializeElements() {
     generateAllButton =
         document.getElementById(
             "generateAll"
+        );
+
+    generateMasterSheetButton =
+        document.getElementById(
+            "generateMasterSheet"
         );
 
     reportContainer =
@@ -3062,6 +3068,14 @@ function attachApplicationEvents() {
             "generateAll",
             generateAllReports,
             "Generate All"
+        );
+    }
+
+    if (elementExists(generateMasterSheetButton)) {
+        wireGenerateButton(
+            "generateMasterSheet",
+            generateMasterSheet,
+            "Generate Master Sheet"
         );
     }
 
@@ -7898,6 +7912,204 @@ function getGrade(
 
     return "F";
 
+}
+
+
+/* =========================================================
+   GENERATE MASTER SHEET (BROADSHEET)
+
+   One table per class. Each row shows only what was asked for:
+   Student Name, Admission No, each subject's total (1st CA +
+   2nd CA + Exams, same rule as createReport/calculateStudentAverage
+   for excluding subjects the student doesn't offer), Overall
+   Total, Average, and Position — computed per class (ranked
+   against classmates only), not read from the "Position" column
+   in the uploaded template.
+   ========================================================= */
+
+function getStudentSubjectTotals(student) {
+    let overallTotal = 0;
+    const subjectTotals = {};
+
+    schoolSubjects.forEach(function (subject) {
+        const firstCAKey = subject + " 1st CA";
+        const secondCAKey = subject + " 2nd CA";
+        const examsKey = subject + " Exams";
+
+        const hasSubject =
+            String(student[firstCAKey] ?? "").trim() !== "" ||
+            String(student[secondCAKey] ?? "").trim() !== "" ||
+            String(student[examsKey] ?? "").trim() !== "";
+
+        if (!hasSubject) {
+            subjectTotals[subject] = null;
+            return;
+        }
+
+        const firstCA = Number(student[firstCAKey]) || 0;
+        const secondCA = Number(student[secondCAKey]) || 0;
+        const exams = Number(student[examsKey]) || 0;
+        const total = firstCA + secondCA + exams;
+
+        subjectTotals[subject] = total;
+        overallTotal += total;
+    });
+
+    const numberOfSubjects = Object.keys(subjectTotals).filter(function (subject) {
+        return subjectTotals[subject] !== null;
+    }).length;
+
+    const average = numberOfSubjects > 0 ? overallTotal / numberOfSubjects : 0;
+
+    return {
+        student: student,
+        admissionNo: student["Admission No"] || "",
+        studentName: student["Student Name"] || "",
+        subjectTotals: subjectTotals,
+        overallTotal: overallTotal,
+        average: average
+    };
+}
+
+function assignClassPositions(rows) {
+    /* Standard competition ranking: equal totals share a position,
+       and the next distinct total skips ahead accordingly
+       (e.g. 1, 2, 2, 4). */
+    const sorted = rows.slice().sort(function (a, b) {
+        return b.overallTotal - a.overallTotal;
+    });
+
+    let lastTotal = null;
+    let lastPosition = 0;
+
+    sorted.forEach(function (row, index) {
+        if (lastTotal === null || row.overallTotal !== lastTotal) {
+            lastPosition = index + 1;
+            lastTotal = row.overallTotal;
+        }
+        row.position = lastPosition;
+    });
+
+    return sorted;
+}
+
+function createMasterSheetHTML() {
+    if (!students || students.length === 0) {
+        return "<p>No student data available. Please upload an Excel file first.</p>";
+    }
+
+    /* Group students by class, preserving the order classes first appear in. */
+    const classOrder = [];
+    const classGroups = {};
+
+    students.forEach(function (student) {
+        const studentClass = String(student["Class"] || "").trim() || "Unassigned";
+
+        if (!classGroups[studentClass]) {
+            classGroups[studentClass] = [];
+            classOrder.push(studentClass);
+        }
+
+        classGroups[studentClass].push(student);
+    });
+
+    let html = `
+        <div class="master-sheet-wrapper">
+            <h1 class="master-sheet-title">${escapeHTML(reportSettings.schoolName || "")} — Master Sheet</h1>
+    `;
+
+    classOrder.forEach(function (className) {
+        const classStudents = classGroups[className];
+
+        /* Only show subject columns actually offered by someone in this class. */
+        const classSubjects = schoolSubjects.filter(function (subject) {
+            return classStudents.some(function (student) {
+                const firstCAKey = subject + " 1st CA";
+                const secondCAKey = subject + " 2nd CA";
+                const examsKey = subject + " Exams";
+                return (
+                    String(student[firstCAKey] ?? "").trim() !== "" ||
+                    String(student[secondCAKey] ?? "").trim() !== "" ||
+                    String(student[examsKey] ?? "").trim() !== ""
+                );
+            });
+        });
+
+        const rows = assignClassPositions(
+            classStudents.map(getStudentSubjectTotals)
+        );
+
+        let subjectHeaderCells = "";
+        classSubjects.forEach(function (subject) {
+            subjectHeaderCells += `<th>${escapeHTML(subject)}</th>`;
+        });
+
+        let bodyRows = "";
+        rows.forEach(function (row, index) {
+            let subjectCells = "";
+            classSubjects.forEach(function (subject) {
+                const value = row.subjectTotals[subject];
+                subjectCells += `<td>${value === null ? "-" : formatScore(value)}</td>`;
+            });
+
+            bodyRows += `
+                <tr>
+                    <td class="serial-cell">${index + 1}</td>
+                    <td>${escapeHTML(row.admissionNo)}</td>
+                    <td class="student-name-cell">${escapeHTML(row.studentName)}</td>
+                    ${subjectCells}
+                    <td class="total-cell">${formatScore(row.overallTotal)}</td>
+                    <td>${row.average.toFixed(2)}%</td>
+                    <td>${formatPosition(row.position)}</td>
+                </tr>
+            `;
+        });
+
+        html += `
+            <section class="master-sheet-class">
+                <h2 class="master-sheet-class-title">Class: ${escapeHTML(className)} (${classStudents.length} student${classStudents.length === 1 ? "" : "s"})</h2>
+                <div class="master-sheet-table-scroll">
+                    <table class="master-sheet-table">
+                        <thead>
+                            <tr>
+                                <th>No.</th>
+                                <th>Adm. No</th>
+                                <th>Student Name</th>
+                                ${subjectHeaderCells}
+                                <th>Total</th>
+                                <th>Average</th>
+                                <th>Position</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${bodyRows}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        `;
+    });
+
+    html += `</div>`;
+
+    return html;
+}
+
+async function generateMasterSheet() {
+
+    if (!students || students.length === 0) {
+        alert("❌ Please upload an Excel file containing student records first.");
+        return;
+    }
+
+    const html = createMasterSheetHTML();
+
+    if (reportContainer) {
+        reportContainer.innerHTML = html;
+        reportContainer.scrollIntoView({ behavior: "smooth" });
+    }
+
+    alert("✅ Master sheet generated successfully.");
 }
 
 
