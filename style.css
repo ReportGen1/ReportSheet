@@ -1018,6 +1018,32 @@ select {
         print-color-adjust: exact !important;
     }
 }
+@media print {
+  .master-sheet-table-scroll {
+    overflow: visible !important;
+  }
+
+  .master-sheet-table {
+    width: 100% !important;
+    table-layout: fixed;
+    font-size: 9px;
+  }
+
+  .master-sheet-table th,
+  .master-sheet-table td {
+    padding: 2px 3px;
+    word-break: break-word;
+  }
+
+  .master-sheet-class {
+    page-break-inside: avoid;
+  }
+
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+}
 
 /* =========================================================
    SCREEN MOBILE
