@@ -1036,7 +1036,25 @@ select {
   }
 
   .master-sheet-class {
+    page-break-inside: auto;
+  }
+
+  .master-sheet-class-title {
+    page-break-after: avoid;
     page-break-inside: avoid;
+  }
+
+  .master-sheet-table thead {
+    display: table-header-group;
+  }
+
+  .master-sheet-table tr {
+    page-break-inside: avoid;
+  }
+
+  .master-sheet-title {
+    margin: 0 0 6px 0;
+    font-size: 14px;
   }
 
   @page {
