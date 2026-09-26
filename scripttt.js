@@ -577,9 +577,28 @@ const REPORT_LIMITS = {
 
     premium: 1000,
 
+    /* Not a literal Infinity: kept as a large finite number so every
+       calculation above (carry-over math, remaining counts, the
+       claim_report_allowance RPC) stays well-defined. Must match
+       PLAN_CONFIG.unlimited.reports in the paystack-verification
+       edge function and the RPC's own CASE branch. */
+    unlimited: 1000000,
+
     free_trial: FREE_TRIAL_REPORTS
 
 };
+
+/* Any plan limit at or above this is treated as "Unlimited" for
+   on-screen display, instead of printing the raw sentinel number. */
+const UNLIMITED_DISPLAY_THRESHOLD = 1000000;
+
+function formatReportCount(n) {
+
+    return (Number(n) || 0) >= UNLIMITED_DISPLAY_THRESHOLD
+        ? "Unlimited"
+        : n;
+
+}
 
 
 /* =========================================================
@@ -2431,7 +2450,7 @@ function displaySubscriptionStatus(
 
                         /
 
-                        ${totalAvailable}
+                        ${formatReportCount(totalAvailable)}
 
                         <br>
 
@@ -2439,7 +2458,7 @@ function displaySubscriptionStatus(
                             New Plan Reports:
                         </strong>
 
-                        ${limit}
+                        ${formatReportCount(limit)}
 
                         <br>
 
@@ -2455,7 +2474,7 @@ function displaySubscriptionStatus(
                             Reports Remaining:
                         </strong>
 
-                        ${remaining}
+                        ${formatReportCount(remaining)}
 
                     `
                     : ""
@@ -2628,6 +2647,16 @@ function getPlanDisplayNameFromPlan(
     ) {
 
         return "PREMIUM";
+
+    }
+
+
+    if (
+        cleanPlan ===
+        "unlimited"
+    ) {
+
+        return "UNLIMITED";
 
     }
 
@@ -5844,7 +5873,7 @@ function updateReportStatus() {
 
         " / " +
 
-        totalAvailable +
+        formatReportCount(totalAvailable) +
 
         "<br>" +
 
@@ -5854,7 +5883,7 @@ function updateReportStatus() {
         "<br>" +
 
         "📌 Reports remaining: " +
-        remaining;
+        formatReportCount(remaining);
 
 
     /* =====================================================
@@ -7343,9 +7372,9 @@ async function generateAllReports() {
     const confirmation = confirm(
         "Generate reports for " + students.length + " student(s)?\n\n" +
         "Subscription: " + getPlanDisplayName() + "\n" +
-        "Current reports generated: " + reportsGenerated + " / " + totalAvailable + "\n" +
+        "Current reports generated: " + reportsGenerated + " / " + formatReportCount(totalAvailable) + "\n" +
         "Carried-over reports: " + carriedOver + "\n" +
-        "Reports remaining: " + remaining + "\n" +
+        "Reports remaining: " + formatReportCount(remaining) + "\n" +
         "New reports to charge: " + chargeCount +
         "\n\nAlready-generated reports will not consume allowance again." +
         (blockedNewItems
@@ -8601,7 +8630,7 @@ async function verifyPaystackPayment(
             await supabaseClient
                 .functions
                 .invoke(
-                    "paystack-verification",
+                    "paystack-verification1",
                     {
 
                         body: {
