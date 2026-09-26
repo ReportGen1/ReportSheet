@@ -65,10 +65,598 @@
 }
 </style>
 
+<!-- =========================================
+         LANDING PAGE FONTS
+    ========================================= -->
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+/* =========================================
+   LANDING PAGE — design tokens
+   A report-card / school-ledger visual language:
+   manila paper, ink navy, blackboard green,
+   and a red marking-pen accent used once, boldly.
+========================================= */
+:root {
+    --srg-ink: #1B2A4A;
+    --srg-ink-soft: #4A4636;
+    --srg-paper: #fffbf2;
+    --srg-manila: #acf3b8;
+    --srg-manila-deep: #cb9d52;
+    --srg-line: #D8CBA0;
+    --srg-red: #AE2E1F;
+    --srg-red-deep: #8C2419;
+    --srg-green: #24413A;
+    --srg-radius: 6px;
+}
+
+.srg-landing, .srg-landing * {
+    box-sizing: border-box;
+}
+
+.srg-landing {
+    font-family: 'Public Sans', system-ui, sans-serif;
+    color: var(--srg-ink-soft);
+    background: var(--srg-paper);
+}
+
+.srg-landing h1,
+.srg-landing h2,
+.srg-landing h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    color: var(--srg-ink);
+    font-weight: 600;
+    line-height: 1.15;
+    margin: 0;
+}
+
+.srg-section-title {
+    font-size: clamp(1.4rem, 1.1rem + 1vw, 1.9rem);
+    margin-bottom: 28px;
+}
+
+/* ---------- HERO ---------- */
+
+.srg-hero {
+    background: linear-gradient(180deg, var(--srg-manila) 0%, var(--srg-paper) 100%);
+    border-bottom: 1px solid var(--srg-line);
+    padding: 56px 24px 64px;
+}
+
+.srg-hero-inner {
+    max-width: 1080px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 48px;
+    align-items: center;
+}
+
+.srg-hero-text {
+    max-width: 46ch;
+}
+
+.srg-hero-badge {
+    display: inline-block;
+    font-size: 0.95rem;
+    color: var(--srg-green);
+    background: rgba(36, 65, 58, 0.08);
+    border: 1px solid rgba(36, 65, 58, 0.25);
+    padding: 5px 14px;
+    border-radius: 999px;
+    margin-bottom: 20px;
+}
+
+.srg-hero-title {
+    font-size: clamp(2.1rem, 1.6rem + 2vw, 3.1rem);
+    letter-spacing: -0.01em;
+}
+
+.srg-hero-lede {
+    font-size: 1.15rem;
+    line-height: 1.55;
+    margin-top: 18px;
+    color: var(--srg-ink-soft);
+}
+
+.srg-hero-actions {
+    display: flex;
+    gap: 14px;
+    margin-top: 30px;
+    flex-wrap: wrap;
+}
+
+.srg-btn {
+    display: inline-block;
+    font-family: 'Public Sans', system-ui, sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 13px 26px;
+    border-radius: var(--srg-radius);
+    text-decoration: none;
+    cursor: pointer;
+    border: 1.5px solid transparent;
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.srg-btn:hover {
+    transform: translateY(-1px);
+}
+
+.srg-btn-primary {
+    background: var(--srg-red);
+    color: #FFFDF8;
+}
+
+.srg-btn-primary:hover {
+    background: var(--srg-red-deep);
+}
+
+.srg-btn-ghost {
+    background: transparent;
+    color: var(--srg-ink);
+    border-color: var(--srg-ink);
+}
+
+.srg-btn-ghost:hover {
+    background: rgba(27, 42, 74, 0.06);
+}
+
+/* ---------- HERO MOCK REPORT CARD ---------- */
+
+.srg-mock-card {
+    background: var(--srg-paper);
+    border: 1px solid var(--srg-line);
+    border-radius: var(--srg-radius);
+    box-shadow: 0 18px 40px -20px rgba(27, 42, 74, 0.35);
+    padding: 22px 24px 26px;
+    position: relative;
+    transform: rotate(-1.2deg);
+}
+
+.srg-mock-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 2px solid var(--srg-ink);
+    padding-bottom: 10px;
+    padding-right: 58px;
+    margin-bottom: 12px;
+}
+
+.srg-mock-card-header h3 {
+    font-size: 1.05rem;
+}
+
+.srg-mock-card-header span {
+    font-size: 0.85rem;
+    color: var(--srg-ink-soft);
+}
+
+.srg-mock-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 10px;
+    font-size: 0.9rem;
+    padding: 7px 0;
+    border-bottom: 1px dashed var(--srg-line);
+}
+
+.srg-mock-row span:nth-child(2) {
+    color: var(--srg-ink-soft);
+}
+
+.srg-mock-row span:nth-child(3) {
+    font-weight: 600;
+    color: var(--srg-ink);
+    min-width: 2ch;
+    text-align: right;
+}
+
+.srg-mock-position {
+    margin-top: 14px;
+    font-size: 0.9rem;
+    color: var(--srg-ink-soft);
+}
+
+.srg-stamp {
+    position: absolute;
+    top: -14px;
+    right: -10px;
+    width: 84px;
+    height: 84px;
+    border: 3px solid var(--srg-red);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--srg-red);
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: 0.03em;
+    transform: rotate(11deg);
+    background: rgba(255, 253, 248, 0.85);
+}
+
+/* ---------- FEATURE LEDGER ---------- */
+
+.srg-ledger {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 64px 24px 20px;
+}
+
+.srg-ledger-table {
+    border-top: 2px solid var(--srg-ink);
+}
+
+.srg-ledger-row {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 24px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--srg-line);
+}
+
+.srg-ledger-subject {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    color: var(--srg-ink);
+    font-size: 1.05rem;
+}
+
+.srg-ledger-cell p {
+    margin: 0;
+    line-height: 1.55;
+}
+
+/* ---------- HOW IT WORKS ---------- */
+
+.srg-steps {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 56px 24px 64px;
+}
+
+.srg-steps-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 28px 40px;
+}
+
+.srg-steps-list li {
+    display: flex;
+    gap: 16px;
+}
+
+.srg-step-number {
+    flex-shrink: 0;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: var(--srg-green);
+    color: var(--srg-paper);
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.05rem;
+}
+
+.srg-steps-list h3 {
+    font-size: 1.05rem;
+    margin-bottom: 6px;
+}
+
+.srg-steps-list p {
+    margin: 0;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+/* ---------- GET STARTED / AUTH ---------- */
+
+.srg-get-started {
+    background: var(--srg-manila);
+    border-top: 1px solid var(--srg-line);
+    border-bottom: 1px solid var(--srg-line);
+    padding: 60px 24px;
+}
+
+.srg-get-started-inner {
+    max-width: 480px;
+    margin: 0 auto;
+    background: var(--srg-paper);
+    border: 1px solid var(--srg-line);
+    border-radius: var(--srg-radius);
+    padding: 36px 32px 32px;
+    box-shadow: 0 18px 40px -24px rgba(27, 42, 74, 0.35);
+}
+
+.srg-get-started-inner h2 {
+    font-size: 1.6rem;
+    margin-bottom: 8px;
+}
+
+.srg-get-started-inner > p {
+    color: var(--srg-ink-soft);
+    margin: 0 0 22px;
+    line-height: 1.5;
+}
+
+.srg-get-started-inner input[type="email"],
+.srg-get-started-inner input[type="password"] {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: 'Public Sans', system-ui, sans-serif;
+    font-size: 1rem;
+    padding: 11px 13px;
+    border: 1.5px solid var(--srg-line);
+    border-radius: var(--srg-radius);
+    background: var(--srg-paper);
+    color: var(--srg-ink);
+    margin-bottom: 14px;
+}
+
+.srg-get-started-inner input:focus {
+    outline: 2px solid var(--srg-green);
+    outline-offset: 1px;
+    border-color: var(--srg-green);
+}
+
+.srg-get-started-inner .srg-auth-buttons {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+.srg-get-started-inner button,
+.srg-get-started-inner .forgot-button {
+    font-family: 'Public Sans', system-ui, sans-serif;
+}
+
+.srg-get-started-inner #signUpButton,
+.srg-get-started-inner #signInButton {
+    flex: 1;
+    min-width: 140px;
+    padding: 12px 18px;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: var(--srg-radius);
+    border: 1.5px solid transparent;
+    cursor: pointer;
+}
+
+.srg-get-started-inner #signUpButton {
+    background: var(--srg-red);
+    color: #FFFDF8;
+}
+
+.srg-get-started-inner #signUpButton:hover {
+    background: var(--srg-red-deep);
+}
+
+.srg-get-started-inner #signInButton {
+    background: transparent;
+    color: var(--srg-ink);
+    border-color: var(--srg-ink);
+}
+
+.srg-get-started-inner #signInButton:hover {
+    background: rgba(27, 42, 74, 0.06);
+}
+
+.srg-get-started-inner .forgot-button,
+.srg-get-started-inner #forgotPasswordButton {
+    display: inline-block;
+    margin-top: 16px;
+    font-size: 0.9rem;
+    color: var(--srg-ink-soft);
+    text-decoration: underline;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+}
+
+.srg-landing p,
+.srg-landing h1 {
+    overflow-wrap: break-word;
+}
+
+@media (max-width: 820px) {
+    .srg-hero-inner {
+        grid-template-columns: 1fr;
+    }
+    .srg-hero-text {
+        max-width: none;
+    }
+    .srg-mock-card {
+        width: 100%;
+        max-width: 440px;
+        margin: 0 auto;
+        transform: rotate(0deg);
+    }
+    .srg-ledger-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+    .srg-steps-list {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .srg-stamp {
+        width: 64px;
+        height: 64px;
+        font-size: 0.78rem;
+        top: -10px;
+        right: -6px;
+    }
+    .srg-mock-card-header {
+        padding-right: 46px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+}
+</style>
+
 </head>
 
 
 <body>
+
+
+    <div class="srg-landing">
+
+    <!-- =========================================
+         HERO
+    ========================================= -->
+
+    <header class="srg-hero">
+        <div class="srg-hero-inner">
+
+            <div class="srg-hero-text">
+                <span class="srg-hero-badge">Built for Nigerian schools</span>
+                <h1 class="srg-hero-title">Student report sheets, without the spreadsheet headache</h1>
+                <p class="srg-hero-lede">
+                    Fill in one Excel template with your students' continuous
+                    assessment and exam scores. The generator does the
+                    grading, the averages, and the class positions, then
+                    hands you every student's report sheet, ready to print
+                    or publish.
+                </p>
+                <div class="srg-hero-actions">
+                    <a href="#authSection" class="srg-btn srg-btn-primary">Get started</a>
+                    <a href="#srg-how-it-works" class="srg-btn srg-btn-ghost">See how it works</a>
+                </div>
+            </div>
+
+            <div class="srg-mock-card" aria-hidden="true">
+                <div class="srg-stamp">PASS</div>
+                <div class="srg-mock-card-header">
+                    <h3>Example Student</h3>
+                    <span>SS2 &middot; First Term</span>
+                </div>
+                <div class="srg-mock-row">
+                    <span>Mathematics</span><span>Exam 68</span><span>B+</span>
+                </div>
+                <div class="srg-mock-row">
+                    <span>English Language</span><span>Exam 74</span><span>A</span>
+                </div>
+                <div class="srg-mock-row">
+                    <span>Basic Science</span><span>Exam 71</span><span>A</span>
+                </div>
+                <div class="srg-mock-position">Position: 3rd out of 41 students</div>
+            </div>
+
+        </div>
+    </header>
+
+
+    <!-- =========================================
+         FEATURE LEDGER
+    ========================================= -->
+
+    <section class="srg-ledger" aria-labelledby="srg-ledger-heading">
+
+        <h2 id="srg-ledger-heading" class="srg-section-title">What the generator handles for you</h2>
+
+        <div class="srg-ledger-table">
+
+            <div class="srg-ledger-row">
+                <div class="srg-ledger-subject">Score entry</div>
+                <div class="srg-ledger-cell"><p>Download one Excel template already set up for your subjects and students. Fill in 1st CA, 2nd CA, and exam scores the way you already record them, then upload the completed file.</p></div>
+            </div>
+
+            <div class="srg-ledger-row">
+                <div class="srg-ledger-subject">Grading</div>
+                <div class="srg-ledger-cell"><p>Subject totals, subject averages, overall averages, and class positions are calculated automatically — and a subject a student doesn't offer is left out of their average, not counted against them.</p></div>
+            </div>
+
+            <div class="srg-ledger-row">
+                <div class="srg-ledger-subject">Report sheets</div>
+                <div class="srg-ledger-cell"><p>Every student gets a formatted report sheet carrying your school's name, address, and logo, with room for teacher and principal comments.</p></div>
+            </div>
+
+            <div class="srg-ledger-row">
+                <div class="srg-ledger-subject">Printing</div>
+                <div class="srg-ledger-cell"><p>Generate one report at a time or the whole class in one go, then print directly or save as PDF.</p></div>
+            </div>
+
+            <div class="srg-ledger-row">
+                <div class="srg-ledger-subject">Online results</div>
+                <div class="srg-ledger-cell"><p>Publish a student's result to a secure online checker with a PIN, so parents can check it without a trip to the school.</p></div>
+            </div>
+
+            <div class="srg-ledger-row">
+                <div class="srg-ledger-subject">Plans</div>
+                <div class="srg-ledger-cell"><p>Plans scale from a single classroom to a full school, from Basic up to Premium — pick the one that matches how many students you're reporting on.</p></div>
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- =========================================
+         HOW IT WORKS
+    ========================================= -->
+
+    <section class="srg-steps" id="srg-how-it-works" aria-labelledby="srg-steps-heading">
+
+        <h2 id="srg-steps-heading" class="srg-section-title">How it works</h2>
+
+        <ol class="srg-steps-list">
+
+            <li>
+                <span class="srg-step-number">1</span>
+                <div>
+                    <h3>Download the template</h3>
+                    <p>An Excel workbook with a sheet per subject, set up for your students.</p>
+                </div>
+            </li>
+
+            <li>
+                <span class="srg-step-number">2</span>
+                <div>
+                    <h3>Fill in the scores</h3>
+                    <p>Enter continuous assessment and exam scores for each subject.</p>
+                </div>
+            </li>
+
+            <li>
+                <span class="srg-step-number">3</span>
+                <div>
+                    <h3>Upload and generate</h3>
+                    <p>Upload the completed file and generate every report in one go.</p>
+                </div>
+            </li>
+
+            <li>
+                <span class="srg-step-number">4</span>
+                <div>
+                    <h3>Print or publish</h3>
+                    <p>Print the reports, or publish them online for parents to check.</p>
+                </div>
+            </li>
+
+        </ol>
+
+    </section>
+
+</div>
 
 
     <!-- =========================================
@@ -77,16 +665,17 @@
 
 <section
     id="authSection"
-    class="card"
+    class="card srg-get-started"
 >
+  <div class="srg-get-started-inner">
 
     <h2>
-       Student Report Sheet <br>Generator
+        Get started
     </h2>
 
     <p id="authMessage">
-        Please sign in or create an
-        account to continue.
+        Create an account to start generating reports,
+        or sign in if you already have one.
     </p>
 
     <input
@@ -94,21 +683,24 @@
         id="email"
         placeholder="Email address"
     >
-  <p></p>
 
     <input
         type="password"
         id="password"
         placeholder="Password"
     >
-<p></p>
-    <button id="signUpButton">
-        Create Account
-    </button>
 
-    <button id="signInButton">
-        Sign in 
-    </button>
+    <div class="srg-auth-buttons">
+
+        <button id="signUpButton">
+            Create Account
+        </button>
+
+        <button id="signInButton">
+            Sign in
+        </button>
+
+    </div>
 
     <!-- FORGOT PASSWORD BUTTON -->
     <button
@@ -121,6 +713,7 @@
 
     <p id="authStatus"></p>
 
+  </div>
 </section>
 
 
@@ -656,7 +1249,8 @@
                         Generate All Reports
 
                     </button>
-                    <button id="generateMasterSheet" type="button">Generate Master Sheet</button>
+
+                  <button id="generateMasterSheet" type="button">Generate Master Sheet</button>
 
 
                 </div>
