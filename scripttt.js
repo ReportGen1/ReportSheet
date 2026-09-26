@@ -4106,7 +4106,7 @@ function downloadExcelTemplate() {
                         t: "str",
 
                         f:
-                            `TRIM(CLEAN(SUBSTITUTE(B${row},CHAR(160)," ")))`
+                            `TRIM(A${row})&"|"&TRIM(CLEAN(SUBSTITUTE(B${row},CHAR(160)," ")))`
 
                     };
 
@@ -4234,7 +4234,7 @@ function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(INDEX('${safeSheetName}'!$C:$C,MATCH(TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0)),""))`
+                            `IF($B${row}="","",IFERROR(INDEX('${safeSheetName}'!$C:$C,MATCH(TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0)),""))`
 
                     };
 
@@ -4247,7 +4247,7 @@ function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(INDEX('${safeSheetName}'!$D:$D,MATCH(TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0)),""))`
+                            `IF($B${row}="","",IFERROR(INDEX('${safeSheetName}'!$D:$D,MATCH(TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0)),""))`
 
                     };
 
@@ -4260,7 +4260,7 @@ function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(INDEX('${safeSheetName}'!$E:$E,MATCH(TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0)),""))`
+                            `IF($B${row}="","",IFERROR(INDEX('${safeSheetName}'!$E:$E,MATCH(TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0)),""))`
 
                     };
 
@@ -4412,7 +4412,7 @@ function downloadExcelTemplate() {
                     .map(
                         function (safeSheetName) {
 
-                            return `COUNTIF('${safeSheetName}'!$F:$F,TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))))`;
+                            return `COUNTIF('${safeSheetName}'!$F:$F,TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))))`;
 
                         }
                     )
