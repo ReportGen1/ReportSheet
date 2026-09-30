@@ -3,7 +3,7 @@
    =========================================================
 
    Before payment, the client calculates the unused balance from the
-   current subscription and sends it to the paystack-verification Edge
+   current subscription and sends it to the paystack-verification1 Edge
    Function as previous_remaining_reports.
 
    The server-side renewal must store that value in the NEW row as
@@ -207,11 +207,41 @@ function simpleHash(text) {
     return (hash >>> 0).toString(16);
 }
 
+/* The Automatic Comments feature stores its generated sentences on the student
+   and its bank inside the settings. Neither may change a report's fingerprint,
+   otherwise editing the comment bank would charge already-generated reports again.
+   Comments TYPED by a teacher still count. */
+function studentForFingerprint(student) {
+
+    const copy = Object.assign({}, student);
+    delete copy.__autoComment;
+
+    if (student && student.__behavior) {
+
+        const flags = student.__autoComment || {};
+
+        copy.__behavior = Object.assign({}, student.__behavior);
+
+        if (flags.teacher) delete copy.__behavior["Class Teacher's Comment"];
+        if (flags.principal) delete copy.__behavior["Principal's Comment"];
+
+    }
+
+    return copy;
+
+}
+
+function reportSettingsForFingerprint() {
+    const copy = Object.assign({}, reportSettings);
+    delete copy.commentBank;
+    return copy;
+}
+
 function getReportGenerationFingerprint(student) {
     const payload = {
-        student: stableValue(student),
+        student: stableValue(studentForFingerprint(student)),
         subjects: stableValue(schoolSubjects),
-        settings: stableValue(reportSettings),
+        settings: stableValue(reportSettingsForFingerprint()),
         website: WEBSITE_ID
     };
 
@@ -580,7 +610,7 @@ const REPORT_LIMITS = {
     /* Not a literal Infinity: kept as a large finite number so every
        calculation above (carry-over math, remaining counts, the
        claim_report_allowance RPC) stays well-defined. Must match
-       PLAN_CONFIG.unlimited.reports in the paystack-verification
+       PLAN_CONFIG.unlimited.reports in the paystack-verification1
        edge function and the RPC's own CASE branch. */
     unlimited: 1000000,
 
@@ -3946,6 +3976,7 @@ async function addSchoolClass(rawName) {
 
     if (elementExists(classNameInput)) {
         classNameInput.value = cleaned;
+        onClassContextChanged();
     }
 
     return true;
@@ -4240,6 +4271,21 @@ function initializeAcademicWorkflow() {
 
     if (elementExists(downloadCumulativeButton)) {
         downloadCumulativeButton.addEventListener("click", downloadCumulativeWorkbook);
+    }
+
+    const cumulativeReportOneButton = document.getElementById("generateCumulativeReportButton");
+    const cumulativeReportAllButton = document.getElementById("generateAllCumulativeReportsButton");
+
+    if (elementExists(cumulativeReportOneButton)) {
+        cumulativeReportOneButton.addEventListener("click", function () {
+            generateCumulativeReports("one");
+        });
+    }
+
+    if (elementExists(cumulativeReportAllButton)) {
+        cumulativeReportAllButton.addEventListener("click", function () {
+            generateCumulativeReports("all");
+        });
     }
 
     if (elementExists(cumulativeStudentSelect)) {
@@ -4600,7 +4646,7 @@ async function downloadClassListTemplate() {
         }
 
         sheet["!cols"] = [
-            { wch: 9 }, { wch: 13 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 10 }
+            { wch: 14 }, { wch: 28 }, { wch: 9 }, { wch: 12 }, { wch: 14 }, { wch: 11 }
         ];
         sheet["!freeze"] = { xSplit: 2, ySplit: 1 };
 
@@ -5320,6 +5366,8 @@ async function buildCumulativeModel(context) {
         studentMap.set(identity(student.admission_no, student.student_name), {
             admission_no: student.admission_no,
             student_name: student.student_name,
+            gender: student.gender || "",
+            house: student.house || "",
             scores: {}
         });
     });
@@ -5350,6 +5398,8 @@ async function buildCumulativeModel(context) {
             studentMap.set(key, {
                 admission_no: row.admission_no || "",
                 student_name: cleanStudentName(row.student_name),
+                gender: "",
+                house: "",
                 scores: {}
             });
         }
@@ -5592,6 +5642,416 @@ async function downloadCumulativeWorkbook() {
         safeFilePart(model.context.className) + "_" + safeFilePart(model.context.session) +
         "_Cumulative_Performance.xlsx"
     );
+
+}
+
+
+
+/* =========================================================
+   CUMULATIVE REPORT SHEETS  (one per student)
+
+   Uses the same look as the term report (same CSS classes), so it
+   prints the same way. Built from every term saved for the
+   selected Class + Session:
+       Subject | First | Second | Third | Cumulative | Grade
+   Cumulative Class Teacher's / Principal's comments come from the
+   Automatic Comments bank, chosen by the student's CUMULATIVE
+   average. Producing these sheets does not use up any report
+   allowance and does not change the term reports.
+   ========================================================= */
+function autoCommentsForCumulative(student) {
+
+    const bank = getCommentBank();
+
+    if (!bank.enabled || student.cumulativeAverage === null) {
+        return { teacher: "", principal: "" };
+    }
+
+    const grade = getGrade(student.cumulativeAverage);
+
+    const seed =
+        String(student.admission_no ?? "").trim() + "|" +
+        cleanStudentName(student.student_name) + "|cumulative";
+
+    const pick = function (list, salt) {
+        return list[parseInt(simpleHash(seed + salt), 16) % list.length];
+    };
+
+    return {
+        teacher: pick(bank.teacher[grade], "|t"),
+        principal: pick(bank.principal[grade], "|p")
+    };
+
+}
+
+function createCumulativeReport(student, model) {
+
+    const context = model.context;
+    const comments = autoCommentsForCumulative(student);
+    const average = student.cumulativeAverage;
+
+    const termsIncluded = ACADEMIC_TERMS
+        .filter(function (term, index) { return student.termAverages[index] !== null; })
+        .map(function (term) { return term.replace(" Term", ""); })
+        .join(", ");
+
+    const subjectRows = student.subjectRows.map(function (row, index) {
+        return `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${escapeHTML(row.subject)}</td>
+                ${row.terms.map(function (value) {
+                    return `<td>${formatCumulativeNumber(value)}</td>`;
+                }).join("")}
+                <td><strong>${formatCumulativeNumber(row.cumulative)}</strong></td>
+                <td>${row.cumulative === null ? "" : getGrade(row.cumulative)}</td>
+            </tr>
+        `;
+    }).join("");
+
+    return `
+        <div class="report cumulative-report">
+
+            <div class="school-header">
+                ${reportSettings.schoolLogo
+                    ? `<div class="school-logo-container">
+                           <img src="${reportSettings.schoolLogo}" alt="School Logo" class="school-logo">
+                       </div>`
+                    : ""}
+                <h1>${escapeHTML(reportSettings.schoolName)}</h1>
+                <p>${escapeHTML(reportSettings.schoolAddress)}</p>
+                <h2>CUMULATIVE (ANNUAL) REPORT SHEET</h2>
+            </div>
+
+            <div class="student-info">
+                <div><strong>Admission No:</strong> ${escapeHTML(student.admission_no || "")}</div>
+                <div><strong>Student Name:</strong> ${escapeHTML(student.student_name || "")}</div>
+                <div><strong>Gender:</strong> ${escapeHTML(student.gender || "")}</div>
+                <div><strong>Class:</strong> ${escapeHTML(context.className)}</div>
+                <div><strong>House:</strong> ${escapeHTML(student.house || "")}</div>
+                <div><strong>Session:</strong> ${escapeHTML(context.session)}</div>
+                <div><strong>Terms Included:</strong> ${escapeHTML(termsIncluded)}</div>
+                <div><strong>Class Size:</strong> ${model.students.length}</div>
+            </div>
+
+            <table class="result-table">
+                <thead>
+                    <tr>
+                        <th>No.</th>
+                        <th>Subject</th>
+                        <th>First<br>Term</th>
+                        <th>Second<br>Term</th>
+                        <th>Third<br>Term</th>
+                        <th>Cumulative</th>
+                        <th>Grade</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${subjectRows}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th colspan="2">TERM AVERAGE</th>
+                        ${student.termAverages.map(function (value) {
+                            return `<th>${formatCumulativeNumber(value)}</th>`;
+                        }).join("")}
+                        <th>${formatCumulativeNumber(average)}</th>
+                        <th>${average === null ? "" : getGrade(average)}</th>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <p style="font-size:0.85em; margin:6px 0;">
+                Cumulative is the average of the terms with recorded scores.
+            </p>
+
+            <div class="summary">
+                <p><strong>Cumulative Average</strong> ${formatCumulativeNumber(average)}%</p>
+                <p><strong>Class Position</strong>
+                    <span class="position-value">${formatPosition(student.position)}</span>
+                </p>
+                <p><strong>Overall Grade</strong> ${average === null ? "" : getGrade(average)}</p>
+            </div>
+
+            <div class="comments">
+                <p><strong>Class Teacher's Comment &amp; Signature:</strong></p>
+                <div class="comment-box">${escapeHTML(comments.teacher)}</div>
+                <p><strong>Principal's Comment &amp; Signature:</strong></p>
+                <div class="comment-box">${escapeHTML(comments.principal)}</div>
+            </div>
+
+        </div>
+    `;
+
+}
+
+function getCumulativeReportFingerprint(student, model) {
+
+    const payload = {
+        kind: "cumulative",
+        class_name: model.context.className,
+        session: model.context.session,
+        admission_no: student.admission_no || "",
+        student_name: cleanStudentName(student.student_name),
+        subjects: student.subjectRows.map(function (row) {
+            return [row.subject, row.terms];
+        }),
+        settings: stableValue(reportSettingsForFingerprint()),
+        website: WEBSITE_ID
+    };
+
+    return simpleHash(JSON.stringify(payload));
+
+}
+
+/* mode "one": the student chosen in the dropdown; mode "all": the whole class.
+   Each NEW cumulative report uses one report from the allowance, exactly like a
+   term report. Regenerating the same report (same scores) is free. */
+async function generateCumulativeReports(mode) {
+
+    const context = getWorkflowContext(false);
+
+    if (!context.className || !context.session) {
+        alert("Please select the Academic Session and Class in Step 1A first.");
+        return;
+    }
+
+    if (!currentUserId) {
+        alert("Please sign in first.");
+        return;
+    }
+
+    if (!elementExists(reportContainer)) {
+        alert("The report area was not found on this page.");
+        return;
+    }
+
+    let chosenName = "";
+
+    if (mode === "one") {
+
+        if (
+            !cumulativeModel ||
+            !elementExists(cumulativeStudentSelect) ||
+            cumulativeStudentSelect.value === ""
+        ) {
+            alert("Click \"Show Cumulative Performance\" and choose a student from the list first.");
+            return;
+        }
+
+        const chosen = cumulativeModel.students[Number(cumulativeStudentSelect.value)];
+        chosenName = chosen ? chosen.student_name : "";
+
+    }
+
+    const setStatus = function (message) {
+        if (elementExists(cumulativeStatus)) cumulativeStatus.textContent = message;
+    };
+
+    setStatus("⏳ Preparing cumulative report(s)…");
+
+    try {
+
+        /* Rebuilt from the database so the sheets always show the latest scores. */
+        const model = await buildCumulativeModel(context);
+
+        if (model.students.length === 0) {
+            setStatus(
+                "❌ No saved scores found for " + contextLabel(context, false) +
+                ". Subject teachers must upload their Step 1B templates first."
+            );
+            return;
+        }
+
+        cumulativeModel = model;
+
+        /* Register (class-list) order for the printed batch. */
+        let list = model.students.slice();
+
+        if (mode === "one") {
+            list = list.filter(function (student) {
+                return student.student_name === chosenName;
+            });
+        }
+
+        if (list.length === 0) {
+            setStatus("❌ That student has no saved scores.");
+            return;
+        }
+
+        /* Same allowance ledger as the term reports: a report costs one
+           allowance the first time it is generated, and nothing when the
+           same report (same scores) is generated again. */
+        const items = list.map(function (student) {
+            const fingerprint = getCumulativeReportFingerprint(student, model);
+            return {
+                student: student,
+                fingerprint: fingerprint,
+                alreadyGenerated: hasReportBeenGenerated(fingerprint)
+            };
+        });
+
+        const newItems = items.filter(function (item) { return !item.alreadyGenerated; });
+
+        let toRender = items;
+        let toCharge = [];
+        let blockedNew = false;
+
+        if (newItems.length > 0) {
+
+            if (mode === "one") {
+
+                if (!canGenerateReports(1)) {
+                    setStatus("");
+                    return;
+                }
+
+                toCharge = newItems;
+
+            } else {
+
+                const limit = getReportLimit();
+
+                if (!limit) {
+                    alert("❌ Your subscription plan could not be determined.");
+                    setStatus("");
+                    return;
+                }
+
+                const carriedOver = getCarriedOverReports();
+                const totalAvailable = limit + carriedOver;
+                const remaining = Math.max(totalAvailable - reportsGenerated, 0);
+
+                if (remaining <= 0) {
+                    alert(
+                        "⚠️ REPORT GENERATION LIMIT REACHED\n\n" +
+                        "Subscription: " + getPlanDisplayName() + "\n" +
+                        "Reports generated: " + reportsGenerated + " / " + totalAvailable +
+                        "\n\nPlease renew or upgrade your subscription to generate more reports."
+                    );
+                    updateReportStatus();
+                    setStatus("");
+                    return;
+                }
+
+                toCharge = newItems.slice(0, remaining);
+                blockedNew = newItems.length > toCharge.length;
+
+                const ok = confirm(
+                    "Generate cumulative reports for " + list.length + " student(s)?\n\n" +
+                    "Subscription: " + getPlanDisplayName() + "\n" +
+                    "Reports generated: " + reportsGenerated + " / " + formatReportCount(totalAvailable) + "\n" +
+                    "Carried-over reports: " + carriedOver + "\n" +
+                    "Reports remaining: " + formatReportCount(remaining) +
+                    "\n\nNew reports to be charged: " + toCharge.length +
+                    "\nAlready-generated reports will not use allowance again." +
+                    (blockedNew
+                        ? "\n\n⚠️ Only " + toCharge.length +
+                          " new report(s) fit in the remaining allowance."
+                        : "")
+                );
+
+                if (!ok) {
+                    setStatus("");
+                    return;
+                }
+
+            }
+
+            const chargeSet = new Set(toCharge.map(function (item) { return item.fingerprint; }));
+
+            /* Reports that cannot be afforded are left out, exactly as in Generate All. */
+            toRender = items.filter(function (item) {
+                return item.alreadyGenerated || chargeSet.has(item.fingerprint);
+            });
+
+        }
+
+        /* Build first, charge second - nothing is shown until the server confirms. */
+        const html = toRender.map(function (item) {
+            return createCumulativeReport(item.student, model);
+        });
+
+        if (toCharge.length > 0) {
+
+            const claimed = await incrementReportCount(toCharge.length);
+
+            if (!claimed) {
+                alert(
+                    "⚠️ No new reports were charged because the server could not confirm the allowance claim.\n\n" +
+                    "Please refresh and try again."
+                );
+                updateReportStatus();
+                setStatus("");
+                return;
+            }
+
+            markReportsAsGenerated(toCharge.map(function (item) { return item.fingerprint; }));
+
+        }
+
+        reportContainer.innerHTML = html.join("");
+        saveGeneratedReports();
+        reportContainer.scrollIntoView({ behavior: "smooth" });
+
+        for (let i = 0; i < toCharge.length; i++) {
+            await logReportGenerated({
+                "Admission No": toCharge[i].student.admission_no,
+                "Student Name": toCharge[i].student.student_name,
+                "Session": context.session,
+                "Term": "Cumulative"
+            });
+        }
+
+        updateReportStatus();
+
+        setStatus(
+            "✅ " + toRender.length + " cumulative report(s) generated for " +
+            contextLabel(context, false) + " (" + toCharge.length +
+            " new report(s) charged). Use Print Report below to print or save as PDF."
+        );
+
+        showRosterNotification(
+            "✅ " + toRender.length + " cumulative report(s) generated.",
+            false
+        );
+
+        if (blockedNew) {
+            alert(
+                "⚠️ Generation stopped at your available report limit.\n\n" +
+                "New reports charged: " + toCharge.length + "\n" +
+                "Reports generated: " + reportsGenerated +
+                "\n\nRenew or upgrade to generate the remaining reports."
+            );
+        }
+
+    } catch (error) {
+
+        console.error("Cumulative report error:", error);
+        setStatus("❌ " + (error.message || "Could not generate the cumulative reports."));
+
+    }
+
+}
+
+/* A cumulative report is identified by the student and the scores on it,
+   so regenerating the same sheet is free but new scores make a new report. */
+function getCumulativeReportFingerprint(student, model) {
+
+    const payload = {
+        type: "cumulative",
+        website: WEBSITE_ID,
+        class_name: model.context.className,
+        session: model.context.session,
+        admission_no: String(student.admission_no || "").trim(),
+        student_name: cleanStudentName(student.student_name),
+        rows: student.subjectRows.map(function (row) {
+            return [row.subject, row.terms];
+        }),
+        settings: reportSettingsForFingerprint()
+    };
+
+    return simpleHash(JSON.stringify(stableValue(payload)));
 
 }
 
