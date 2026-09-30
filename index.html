@@ -608,8 +608,9 @@
         </div>
 
     </section>
-
-         
+      
+      
+      
 
 
     <!-- =========================================
@@ -619,8 +620,8 @@
     <section class="srg-steps" id="srg-how-it-works" aria-labelledby="srg-steps-heading">
 
         <h2 id="srg-steps-heading" class="srg-section-title">How it works</h2>
-
-        <div class="tutorial-card">
+      
+  <div class="tutorial-card">
     <h3>🎥 Video Tutorial</h3>
     <p>Watch this video to learn how to use the Student Report Generator.</p>
 
@@ -632,7 +633,7 @@
     allowfullscreen>
 </iframe>
     </div>
-    </div>
+  </div>
 
 
         <ol class="srg-steps-list">
@@ -675,7 +676,6 @@
 
 </div>
 
-    
 
     <!-- =========================================
      LOGIN / SIGN UP
@@ -853,12 +853,6 @@
                     <li>
                         Student report generation
                     </li>
-                    <li>
-                        check published results online 
-                    </li>
-                    <li>
-                        online result checker 
-                    </li>
 
                     <li>
                         Printing / PDF
@@ -939,12 +933,6 @@
                     <li>
                         School information
                     </li>
-                    <li>
-                        check published results online 
-                </li>
-                    <li>
-                        online result checker 
-                    </li>
 
                     <li>
                         Teacher/principal comments
@@ -1016,12 +1004,6 @@
                     <li>
                         1,000 report generations
                     </li>
-                    <li>
-                        check published results online 
-                    </li>
-                    <li>
-                        online result checker 
-                    </li>
 
                     <li>
                         Priority support
@@ -1084,12 +1066,6 @@
 
                     <li>
                         Everything in Premium
-                    </li>
-                    <li>
-                        check published results online 
-                    </li>
-                    <li>
-                        online result checker 
                     </li>
 
                     <li>
@@ -1291,30 +1267,35 @@
 
 
             <!-- =================================
-                 STEP 1
+                 STEP 1A: MASTER STUDENT CLASS LIST
             ================================= -->
 
-            <section class="card">
+            <section class="card" id="studentRosterSection">
 
-                <h2>
-                    Step 1A: Download Student Excel Template👫
-                </h2>
-
+                <h2>Step 1A: Master Student Class List</h2>
 
                 <p>
-
-                    Download the official Student Excel
-                    template, enter your students'
-                    information and scores, then
-                    upload the completed file in step 2 below.
-
+                    Choose the Academic Session, Term and Class. This becomes the
+                    context for everything below. Download the Class List Template,
+                    enter each student's name (Admission No is optional &mdash; use it
+                    only to tell apart two students with the same name), then upload it.
+                    The names are filled automatically into every subject sheet in
+                    Step 1B and into the General Master Template in Step 1C.
                 </p>
 
+                <label for="academicSessionSelect" style="display:block; margin-top:10px;">
+                    <strong>Academic Session</strong>
+                </label>
+                <select id="academicSessionSelect" style="margin-bottom:10px;"></select>
+
+                <label for="academicTermSelect" style="display:block; margin-top:10px;">
+                    <strong>Term</strong>
+                </label>
+                <select id="academicTermSelect" style="margin-bottom:10px;"></select>
 
                 <label for="classNameSelect" style="display:block; margin-top:10px;">
                     <strong>Class</strong>
                 </label>
-
                 <select id="classNameSelect" style="margin-bottom:10px;">
                     <option value="">-- Select Class --</option>
                 </select>
@@ -1323,12 +1304,21 @@
                     Don't see your class? Add it in Step 0 above first.
                 </p>
 
+                <p class="context-banner" style="font-weight:bold; margin:8px 0 14px;"></p>
 
-                <button id="downloadTemplate">
-
-                    Download Student Template
-
+                <button type="button" id="downloadClassListTemplate">
+                    📥 Download Class List Template
                 </button>
+
+                <div style="margin-top:15px;">
+                    <label for="classListFile"><strong>Select Completed Class List</strong></label>
+                    <input type="file" id="classListFile" accept=".xlsx,.xls" style="display:block; margin-top:7px;">
+                    <button type="button" id="uploadClassListButton" style="margin-top:10px;">
+                        ⬆️ Upload Class List
+                    </button>
+                </div>
+
+                <p id="rosterStatus" style="margin-top:10px; font-weight:600;"></p>
 
             </section>
 
@@ -1339,16 +1329,17 @@
 
             <section class="card">
 
-                <h2>
-                    Step 1B: Subject Templates
-                </h2>
+                <h2>Step 1B: Student Information &amp; Subject Templates</h2>
 
-                <p>
-                    A subject teacher can download just their subject's
-                    sheet, fill it in, and upload it here. It saves to
-                    your account and is automatically included the next
-                    time the full Excel template is downloaded for this
-                    class &mdash; even from a different device.
+                <p class="context-banner" style="font-weight:bold; margin:8px 0;"></p>
+
+                <div id="studentPreviewContainer"></div>
+
+                <p style="margin-top:10px;">
+                    The downloaded subject template already contains the Student Name
+                    and Admission No. from the class list above. The subject teacher only
+                    enters 1st CA, 2nd CA and Exams, then uploads the file here. Scores
+                    are saved separately for each Session and Term.
                 </p>
 
                 <label for="subjectTemplateSelect" style="display:block; margin-top:10px;">
@@ -1364,9 +1355,6 @@
                 <label for="subjectTemplateFile" style="display:block; margin-top:15px;">
                     <strong>Upload Completed Subject Template</strong>
                 </label>
-                <p>
-                    uploaded subject is saved on the database and written to student excel template in step 1A  
-                </p>
 
                 <input
                     type="file"
@@ -1379,6 +1367,58 @@
             </section>
 
 
+            <!-- =================================
+                 STEP 1C: GENERAL MASTER TEMPLATE
+            ================================= -->
+
+            <section class="card">
+
+                <h2>Step 1C: Download General Master Excel Template </h2>
+
+                <p class="context-banner" style="font-weight:bold; margin:8px 0;"></p>
+
+                <p>
+                    Download the General Master Excel Template. It contains the class
+                    list and every subject score already uploaded by subject teachers
+                    for the selected Session and Term. Fill in anything missing, then
+                    upload the completed file in Step 2.
+                </p>
+
+                <button id="downloadTemplate">
+                    📥 Download General Master Excel Template
+                </button>
+
+            </section>
+
+
+            <!-- =================================
+                 ANNUAL / CUMULATIVE PERFORMANCE
+            ================================= -->
+
+            <section class="card" id="cumulativeSection">
+
+                <h2>📊 Annual / Cumulative Performance</h2>
+
+                <p class="context-banner" data-context="annual" style="font-weight:bold; margin:8px 0;"></p>
+
+                <p>
+                    Combines the First, Second and Third Term scores saved for the
+                    selected Class and Session. Cumulative is the average of the terms
+                    that have scores.
+                </p>
+
+                <button type="button" id="showCumulativeButton">Show Cumulative Performance</button>
+                <button type="button" id="downloadCumulativeButton">Download Cumulative Excel</button>
+
+                <select id="cumulativeStudentSelect" style="display:none; margin-top:10px;"></select>
+
+                <p id="cumulativeStatus" style="margin-top:10px;"></p>
+
+                <div id="cumulativeResult" style="overflow-x:auto;"></div>
+
+            </section>
+
+
 
             <!-- =================================
                  STEP 2
@@ -1387,11 +1427,8 @@
             <section class="card">
 
                 <h2>
-                    Step 2: Upload Completed Student Template
+                    Step 2: Upload Completed Template
                 </h2>
-                <p>
-                    Upload the completed student excel template from step 1A above and click on generate buttons to generate 
-                </p>
 
 
                 <input
