@@ -16251,7 +16251,10 @@ async function prepareReportsForPrintInApp() {
 
     /* TEMPORARY: shows the fit numbers so you can confirm the new code is
        running in the app. Delete this line when the print looks right. */
-    if (window.__printDebug) alert(window.__printDebug);
+    if (window.__printDebug) {
+        alert(window.__printDebug.replace("NEW fit code v2", "NEW fit code v3 (SVG page)") +
+            " | svg pages: " + (reportPrintLayer ? reportPrintLayer.querySelectorAll("svg.report-svg-page").length : 0));
+    }
 
     document.documentElement.classList.add("printing-reports");
 }
