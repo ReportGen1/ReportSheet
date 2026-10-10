@@ -15799,10 +15799,10 @@ const REPORT_PAD_BOTTOM_MM = 2;
    padding) and is scaled to FILL it, in both directions: shrunk when too
    tall, enlarged when too short. The website keeps the script.js sizing. */
 const APP_PAGE_WIDTH_MM = 210;
-const APP_PAGE_HEIGHT_MM = 296;      // 1mm under 297mm so the page never spills onto a blank 2nd page
-const APP_PAD_TOP_MM = 6;
+const APP_PAGE_HEIGHT_MM = 320;      // 1mm under 297mm so the page never spills onto a blank 2nd page
+const APP_PAD_TOP_MM = 11;
 const APP_PAD_SIDE_MM = 6;
-const APP_PAD_BOTTOM_MM = 5;
+const APP_PAD_BOTTOM_MM = 2;
 const APP_MAX_GROW = 3;            // never enlarge more than this, so a tiny report is not blown up absurdly
 
 function fitReportsToSinglePage(layer, fillPage) {
