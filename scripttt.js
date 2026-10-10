@@ -15803,7 +15803,7 @@ const APP_PAGE_HEIGHT_MM = 296;      // 1mm under 297mm so the page never spills
 const APP_PAD_TOP_MM = 6;
 const APP_PAD_SIDE_MM = 6;
 const APP_PAD_BOTTOM_MM = 5;
-const APP_MAX_GROW = 1.8;            // never enlarge more than this, so a tiny report is not blown up absurdly
+const APP_MAX_GROW = 3;            // never enlarge more than this, so a tiny report is not blown up absurdly
 
 function fitReportsToSinglePage(layer, fillPage) {
     layer = layer || reportPrintLayer;
