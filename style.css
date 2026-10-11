@@ -1410,3 +1410,8 @@ select {
         border-radius: 0 !important;
     }
 }
+#appBanner{position:fixed;bottom:0;left:0;right:0;z-index:9999;display:flex;align-items:center;gap:10px;padding:10px 14px;background:#1e3a8a;color:#fff;font-size:14px}
+#appBanner span{flex:1}
+#appBanner a{background:#fff;color:#1e3a8a;padding:6px 14px;border-radius:6px;text-decoration:none;font-weight:600}
+#appBanner button{background:none;border:0;color:#fff;font-size:18px}
+@media print{#appBanner{display:none!important}}
