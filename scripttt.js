@@ -879,7 +879,7 @@ function srgInjectCollapseStyle() {
 
 /* Puts the arrow in `heading`. getItems() returns the elements that
    are hidden while the section is minimized. */
-function srgMakeCollapsible(heading, getItems) {
+function srgMakeCollapsible(heading, getItems, startCollapsed) {
 
     if (!heading || heading.getAttribute("data-srg-collapsible") === "1") return null;
 
@@ -897,7 +897,8 @@ function srgMakeCollapsible(heading, getItems) {
         "<polyline points=\"6 9 12 15 18 9\"></polyline></svg>";
     heading.appendChild(button);
 
-    let collapsed = false;
+    /* Sections start closed; pass startCollapsed = false to start open. */
+    let collapsed = startCollapsed !== false;
     let hiddenItems = [];
 
     function apply() {
