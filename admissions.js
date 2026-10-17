@@ -664,21 +664,109 @@
         return /[",\n\r]/.test(text) ? "\"" + text.replace(/"/g, "\"\"") + "\"" : text;
     }
 
+    /* The Android app (Capacitor WebView) ignores blob / a[download] links, so inside the app the file
+       is written with the Filesystem plugin and handed to the share sheet (Save to Files, Drive, WhatsApp, Excel). */
+    function isNativeApp() {
+        try {
+            return !!(window.Capacitor &&
+                typeof window.Capacitor.isNativePlatform === "function" &&
+                window.Capacitor.isNativePlatform());
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function blobToBase64(blob) {
+        return new Promise(function (resolve, reject) {
+            const reader = new FileReader();
+            reader.onloadend = function () {
+                const result = String(reader.result || "");
+                resolve(result.substring(result.indexOf(",") + 1));
+            };
+            reader.onerror = function () { reject(reader.error || new Error("Could not read file")); };
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    async function saveAndShareNative(blob, fileName) {
+
+        const plugins = window.Capacitor && window.Capacitor.Plugins;
+        const Filesystem = plugins && plugins.Filesystem;
+        const Share = plugins && plugins.Share;
+
+        if (!Filesystem || !Share) {
+            throw new Error("Save plugins are missing from this app. Please install the latest version of the app.");
+        }
+
+        const written = await Filesystem.writeFile({
+            path: fileName,
+            data: await blobToBase64(blob),
+            directory: "CACHE"
+        });
+
+        await Share.share({
+            title: fileName,
+            url: written.uri,
+            dialogTitle: "Save or open " + fileName
+        });
+
+    }
+
     function saveFile(blob, fileName) {
 
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
+        const holder = $("downloadSaveLink");
+        holder.innerHTML = "";
 
-        link.href = url;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const note = document.createElement("p");
+        note.className = "adm-note";
+        const link = document.createElement("a");
+        const strong = document.createElement("strong");
+        link.appendChild(strong);
+
+        if (isNativeApp()) {
+
+            link.href = "#";
+            strong.textContent = "tap here to save / share " + fileName;
+            note.appendChild(document.createTextNode("Choose where to save the file. If the save sheet did not open, "));
+
+            const share = function () {
+                saveAndShareNative(blob, fileName).catch(function (error) {
+                    console.error("Native save error:", error);
+                    alert("\u274C Could not save the file: " + ((error && error.message) || error));
+                });
+            };
+
+            link.addEventListener("click", function (event) {
+                event.preventDefault();
+                share();
+            });
+
+            note.appendChild(link);
+            note.appendChild(document.createTextNode("."));
+            holder.appendChild(note);
+
+            share();
+            return;
+
+        }
+
+        const url = URL.createObjectURL(blob);
+        const auto = document.createElement("a");
+
+        auto.href = url;
+        auto.download = fileName;
+        document.body.appendChild(auto);
+        auto.click();
+        document.body.removeChild(auto);
 
         /* A real tap on a link always works, even if the browser blocks the automatic download. */
-        $("downloadSaveLink").innerHTML =
-            "<p class=\"adm-note\">If the file did not download, <a href=\"" + url + "\" download=\"" +
-            admEsc(fileName) + "\"><strong>tap here to save " + admEsc(fileName) + "</strong></a>.</p>";
+        link.href = url;
+        link.download = fileName;
+        strong.textContent = "tap here to save " + fileName;
+        note.appendChild(document.createTextNode("If the file did not download, "));
+        note.appendChild(link);
+        note.appendChild(document.createTextNode("."));
+        holder.appendChild(note);
 
         setTimeout(function () { URL.revokeObjectURL(url); }, 300000);
 
