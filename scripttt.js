@@ -12102,21 +12102,12 @@ async function downloadExcelTemplate() {
             };
 
 
-            /* Count only the subjects this student actually offers —
-               i.e. subjects whose sheet contains this student's Adm No —
-               so subjects not offered are excluded from the average's
-               denominator instead of dividing by the school's total
-               subject count. */
-            const subjectsOfferedFormula =
-                subjectSheetSafeNames
-                    .map(
-                        function (safeSheetName) {
-
-                            return `COUNTIF('${safeSheetName}'!$F:$F,TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))))`;
-
-                        }
-                    )
-                    .join("+");
+            /* Count only the subjects this student actually has a score
+               in. A subject's Total cell is blank when its 1st CA, 2nd CA
+               and Exams are all blank (not offered), and a number
+               otherwise, so COUNT() skips the subjects not offered
+               instead of dividing by every subject the school has. */
+            const subjectsOfferedFormula = "COUNT(" + overallTotalFormula + ")";
 
 
             scoresSheet[
@@ -12127,7 +12118,7 @@ async function downloadExcelTemplate() {
                 t: "n",
 
                 f:
-                    `IF($B${row}="","",IFERROR(${overallTotalLetter}${row}/(${subjectsOfferedFormula}),0))`
+                    `IF($B${row}="","",IFERROR(${overallTotalLetter}${row}/${subjectsOfferedFormula},0))`
 
             };
 
