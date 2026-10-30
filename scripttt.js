@@ -11048,7 +11048,7 @@ async function downloadSubjectTemplate() {
         const workbook = XLSX.utils.book_new();
 
         const subjectData = [
-            ["Adm No", "Student Name", "1st CA", "2nd CA", "Exams", "Match Key"]
+            ["Adm No", "Student Name", "1st CA", "2nd CA", "Exams", "Match Key", "Total"]
         ];
 
         const rowCount = Math.max(TEMPLATE_STUDENT_ROWS, savedRows.length);
@@ -11064,12 +11064,13 @@ async function downloadSubjectTemplate() {
                     saved.first_ca ?? "",
                     saved.second_ca ?? "",
                     saved.exams ?? "",
+                    "",
                     ""
                 ]);
             } else if (i === 0 && savedRows.length === 0) {
-                subjectData.push(["001", "Example Student", "", "", "", ""]);
+                subjectData.push(["001", "Example Student", "", "", "", "", ""]);
             } else {
-                subjectData.push(["", "", "", "", "", ""]);
+                subjectData.push(["", "", "", "", "", "", ""]);
             }
 
         }
@@ -11083,13 +11084,28 @@ async function downloadSubjectTemplate() {
             };
         }
 
+        /* Visible "Total" column (G): 1st CA + 2nd CA + Exams, so
+           teachers can see each student's total. The hidden Match Key
+           stays in column F so the Scores sheet lookups are unchanged. */
+        for (let row = 2; row <= rowCount + 1; row++) {
+            subjectSheet["G" + row] = {
+                t: "n",
+                f: `IF(COUNT(C${row}:E${row})=0,"",SUM(C${row}:E${row}))`
+            };
+        }
+        subjectSheet["!ref"] = XLSX.utils.encode_range({
+            s: { r: 0, c: 0 },
+            e: { r: rowCount, c: 6 }
+        });
+
         subjectSheet["!cols"] = [
             { wch: 7 },
             { wch: 14 },
             { wch: 6 },
             { wch: 6 },
             { wch: 6 },
-            { wch: 10, hidden: true }
+            { wch: 10, hidden: true },
+            { wch: 8 }
         ];
 
         subjectSheet["!freeze"] = { xSplit: 3, ySplit: 1 };
@@ -11720,7 +11736,8 @@ async function downloadExcelTemplate() {
                         "1st CA",
                         "2nd CA",
                         "Exams",
-                        "Match Key"
+                        "Match Key",
+                        "Total"
                     ]
 
                 ];
@@ -11753,7 +11770,8 @@ async function downloadExcelTemplate() {
                             saved.first_ca ?? "",
                             saved.second_ca ?? "",
                             saved.exams ?? "",
-                            ""
+                            "",
+                    ""
                         ]);
 
                     } else {
@@ -11771,7 +11789,8 @@ async function downloadExcelTemplate() {
                             "",
                             "",
                             "",
-                            ""
+                            "",
+                        ""
 
                         ]);
 
@@ -11820,7 +11839,8 @@ async function downloadExcelTemplate() {
                     { wch: 6 },
                     { wch: 6 },
                     { wch: 6 },
-                    { wch: 10, hidden: true }
+                    { wch: 10, hidden: true },
+                { wch: 8 }
 
                 ];
 
@@ -11832,6 +11852,20 @@ async function downloadExcelTemplate() {
                     ySplit: 1
 
                 };
+        /* Visible "Total" column (G): 1st CA + 2nd CA + Exams, so
+           teachers can see each student's total. The hidden Match Key
+           stays in column F so the Scores sheet lookups are unchanged. */
+        for (let row = 2; row <= TEMPLATE_STUDENT_ROWS + 1; row++) {
+            subjectSheet["G" + row] = {
+                t: "n",
+                f: `IF(COUNT(C${row}:E${row})=0,"",SUM(C${row}:E${row}))`
+            };
+        }
+        subjectSheet["!ref"] = XLSX.utils.encode_range({
+            s: { r: 0, c: 0 },
+            e: { r: TEMPLATE_STUDENT_ROWS, c: 6 }
+        });
+
 
 
                 XLSX.utils.book_append_sheet(
@@ -11934,7 +11968,7 @@ async function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(INDEX('${safeSheetName}'!$C:$C,MATCH(TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0)),""))`
+                            `IF($B${row}="","",IFERROR(IF(INDEX('${safeSheetName}'!$C:$C,MATCH(TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0))="","",INDEX('${safeSheetName}'!$C:$C,MATCH(TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0))),""))`
 
                     };
 
@@ -11947,7 +11981,7 @@ async function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(INDEX('${safeSheetName}'!$D:$D,MATCH(TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0)),""))`
+                            `IF($B${row}="","",IFERROR(IF(INDEX('${safeSheetName}'!$D:$D,MATCH(TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0))="","",INDEX('${safeSheetName}'!$D:$D,MATCH(TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0))),""))`
 
                     };
 
@@ -11960,7 +11994,7 @@ async function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF($B${row}="","",IFERROR(INDEX('${safeSheetName}'!$E:$E,MATCH(TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0)),""))`
+                            `IF($B${row}="","",IFERROR(IF(INDEX('${safeSheetName}'!$E:$E,MATCH(TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0))="","",INDEX('${safeSheetName}'!$E:$E,MATCH(TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0))),""))`
 
                     };
 
