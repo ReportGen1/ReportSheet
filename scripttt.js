@@ -2364,6 +2364,44 @@ function attachAuthenticationEvents() {
                 }
 
 
+                /* Name and phone number are required to register, so the
+                   developer can contact new users and guide them. */
+                const extra = document.getElementById("signupExtra");
+                const nameInput = document.getElementById("signupFullName");
+                const phoneInput = document.getElementById("signupPhone");
+
+                let fullName = "";
+                let phone = "";
+
+                if (extra && nameInput && phoneInput) {
+
+                    if (extra.style.display === "none") {
+                        extra.style.display = "block";
+                        nameInput.focus();
+                        setAuthStatus(
+                            "Enter your full name and phone number, then tap Create Account again."
+                        );
+                        return;
+                    }
+
+                    fullName = nameInput.value.trim().replace(/\s+/g, " ");
+                    phone = phoneInput.value.replace(/[\s().-]/g, "");
+
+                    if (fullName.length < 3 || fullName.indexOf(" ") === -1) {
+                        setAuthStatus("❌ Please enter your full name (first and last name).");
+                        nameInput.focus();
+                        return;
+                    }
+
+                    if (!/^\+?\d{10,15}$/.test(phone)) {
+                        setAuthStatus("❌ Please enter a valid phone number, e.g. 08012345678.");
+                        phoneInput.focus();
+                        return;
+                    }
+
+                }
+
+
                 setAuthStatus(
                     "Creating your account..."
                 );
@@ -2387,7 +2425,14 @@ function attachAuthenticationEvents() {
                                 options: {
 
                                     emailRedirectTo:
-                                        WEBSITE_URL
+                                        WEBSITE_URL,
+
+                                    data: {
+                                        full_name: fullName,
+                                        phone: phone,
+                                        website: WEBSITE_ID,
+                                        role: "owner"
+                                    }
 
                                 }
 

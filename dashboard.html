@@ -50,6 +50,7 @@
             <select id="termSel"></select>
         </div>
         <div class="grid" id="stats"></div>
+        <div class="card" id="attnCard"><h2>⚠️ Needs attention</h2><div id="attn"></div></div>
         <div class="card"><h2>Students per class</h2><div id="perClass"></div></div>
         <div class="card"><h2>School fees</h2><div id="feesBox"></div></div>
         <div class="card"><h2>Report allowance</h2><div id="reports"></div></div>
@@ -188,6 +189,72 @@ function renderFees(state, session, term) {
     return f;
 }
 
+function normKey(v) {
+    return String(v || "").toUpperCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+/* Finds classes with no form master and subjects with no teacher.
+   A class offers its level's subjects (Pre Basic / Basic / Post Basic),
+   or every subject when the class has no level – same rule as the app. */
+function computeUnassigned(state) {
+    var settings = state.settings || {};
+    var classLevels = settings.classLevels || {};
+    var subjectLevels = settings.subjectLevels || {};
+    var found = [];
+
+    state.classes.forEach(function (c) {
+        var key = normKey(c.class_name);
+        var level = "";
+        Object.keys(classLevels).forEach(function (n) { if (normKey(n) === key) level = classLevels[n]; });
+
+        var offered = state.subjectList.filter(function (subj) {
+            var lv = Array.isArray(subjectLevels[subj]) ? subjectLevels[subj] : [];
+            return !level || lv.length === 0 || lv.indexOf(level) >= 0;
+        });
+
+        var rows = state.assignments.filter(function (a) { return normKey(a.class_name) === key; });
+        var hasForm = rows.some(function (a) { return !a.subject; });
+        var taught = {};
+        rows.forEach(function (a) { if (a.subject) taught[normKey(a.subject)] = true; });
+        var missing = offered.filter(function (subj) { return !taught[normKey(subj)]; });
+
+        if (!hasForm || missing.length) {
+            found.push({ name: c.class_name, level: level, noForm: !hasForm, missing: missing });
+        }
+    });
+    return found;
+}
+
+function renderAttention(state) {
+    var box = document.getElementById("attn");
+    box.innerHTML = "";
+    if (!state.classes.length) {
+        box.appendChild(el("p", "muted", "No classes yet."));
+        return 0;
+    }
+    var found = computeUnassigned(state);
+    if (!found.length) {
+        var ok = el("p", "", "✅ Every class has a form master and every subject has a teacher.");
+        ok.style.color = "var(--ok)";
+        box.appendChild(ok);
+        return 0;
+    }
+    var count = 0;
+    found.forEach(function (f) {
+        var item = el("div");
+        item.style.cssText = "border-top:1px solid var(--line);padding:8px 0";
+        item.appendChild(el("strong", "", f.name + (f.level ? " (" + f.level + ")" : "")));
+        if (f.noForm) { item.appendChild(el("div", "", "• No form master assigned")); count++; }
+        if (f.missing.length) {
+            item.appendChild(el("div", "", "• No teacher for: " + f.missing.join(", ")));
+            count += f.missing.length;
+        }
+        box.appendChild(item);
+    });
+    box.appendChild(el("p", "muted", "Assign staff in Staff access. Staff must sign up and be approved first."));
+    return count;
+}
+
 function addStat(n, label) {
     var s = el("div", "stat");
     s.appendChild(el("div", "n", String(n)));
@@ -216,6 +283,8 @@ function render(state) {
     addStat(state.subjects, "School subjects");
     addStat(state.staffApproved, "Staff approved");
     if (state.staffPending) addStat(state.staffPending, "Staff awaiting approval");
+    var needs = renderAttention(state);
+    if (needs) addStat(needs, "Staff slots unassigned");
     var fees = renderFees(state, session, term);
     if (fees) {
         addStat(money(fees.total.collected), "Fees collected");
@@ -264,8 +333,10 @@ function render(state) {
             }),
             client.from("school_staff").select("status")
                 .eq("owner_user_id", user.id).eq("website_id", WEBSITE_ID),
-            client.from("school_profile").select("subjects")
+            client.from("school_profile").select("subjects, report_settings")
                 .eq("owner_user_id", user.id).eq("website_id", WEBSITE_ID).maybeSingle(),
+            client.from("staff_assignments").select("class_name, subject")
+                .eq("owner_user_id", user.id).eq("website_id", WEBSITE_ID),
             client.from("subscriptions").select("*")
                 .eq("user_id", user.id).eq("website_id", WEBSITE_ID)
                 .order("created_at", { ascending: false }).limit(1).maybeSingle()
@@ -288,7 +359,11 @@ function render(state) {
         var students = results[1];
         var staffRows = (results[2].data) || [];
         var subjectsRaw = results[3].data && results[3].data.subjects;
-        var sub = results[4].data;
+        var assignments = (results[4].data) || [];
+        var sub = results[5].data;
+        var profileRow = results[3].data || {};
+        var subjectList = Array.isArray(profileRow.subjects)
+            ? profileRow.subjects.filter(function (x) { return typeof x === "string" && x.trim(); }) : [];
 
         var subjectCount = 0;
         if (Array.isArray(subjectsRaw)) subjectCount = subjectsRaw.length;
@@ -300,6 +375,9 @@ function render(state) {
             subjects: subjectCount,
             staffApproved: staffRows.filter(function (r) { return r.status === "approved"; }).length,
             fees: fees,
+            assignments: assignments,
+            subjectList: subjectList,
+            settings: profileRow.report_settings || {},
             staffPending: staffRows.filter(function (r) { return r.status === "pending"; }).length
         };
 
