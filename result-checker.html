@@ -1316,7 +1316,7 @@ function applyResultMode(isCumulative) {
         if (el) el.textContent = labels[id];
     });
     var positionHead = document.getElementById("thSubjectPosition");
-    if (positionHead) positionHead.style.display = isCumulative ? "none" : "";
+    if (positionHead) { positionHead.textContent = "Position"; positionHead.style.display = isCumulative ? "none" : ""; }
     var attendance = document.getElementById("resultAttendance");
     if (attendance && attendance.parentNode) {
         attendance.parentNode.style.display = isCumulative ? "none" : "";

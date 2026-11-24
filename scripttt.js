@@ -17291,6 +17291,7 @@ async function publishOneStudentResult(student) {
         /* Full report-sheet details. Needs the p_extra parameter added by
            the SQL migration; if the server does not have it yet, fall
            back to the original call so publishing never breaks. */
+        let usedFallbackWithoutExtras = false;
         let { data, error } =
             await supabaseClient.rpc(
                 "publish_student_result",
@@ -17303,6 +17304,7 @@ async function publishOneStudentResult(student) {
              /p_extra|could not find the function/i.test(error.message || ""))
         ) {
             console.warn("Server has no p_extra yet; publishing without extras.");
+            usedFallbackWithoutExtras = true;
             ({ data, error } =
                 await supabaseClient.rpc("publish_student_result", publishParams));
         }
@@ -17357,8 +17359,11 @@ async function publishOneStudentResult(student) {
                     : 5,
             studentName: studentName,
             message:
-                response.message ||
-                "Result published successfully."
+                (response.message ||
+                "Result published successfully.") +
+                (usedFallbackWithoutExtras
+                    ? " WARNING: the full report-sheet details were NOT saved because the database migration has not been applied. Run migration_full_report_online.sql in Supabase, then publish again."
+                    : "")
         };
 
     } catch (error) {
