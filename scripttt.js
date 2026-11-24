@@ -1747,6 +1747,8 @@ document.addEventListener(
 
         checkLogin();
 
+        initializeWhatsNewBadge();
+
     }
 );
 
@@ -20715,4 +20717,73 @@ async function promotionApply() {
         applyButton.disabled = false;
     }
 
+}
+
+
+
+/* =========================================================
+   WHAT'S NEW BADGE
+   Developer posts updates in the Supabase table `app_updates`.
+   The menu link "What's New" shows a NEW badge until the owner
+   opens whats-new.html (which records the newest update seen).
+   ========================================================= */
+
+function initializeWhatsNewBadge() {
+
+    const link = document.getElementById("srgWhatsNewLink");
+
+    if (!link) { return; }
+
+    if (!document.getElementById("srgWhatsNewStyle")) {
+        const style = document.createElement("style");
+        style.id = "srgWhatsNewStyle";
+        style.textContent =
+            "#srgWhatsNewLink.srg-has-new::after{content:'NEW';" +
+            "margin-left:8px;padding:2px 7px;border-radius:999px;" +
+            "background:#dc2626;color:#fff;font-size:11px;" +
+            "font-weight:700;letter-spacing:.5px;}";
+        document.head.appendChild(style);
+    }
+
+    const seenKey = "srg_whatsnew_seen_" + WEBSITE_ID;
+
+    async function refresh() {
+
+        try {
+
+            const result = await supabaseClient
+                .from("app_updates")
+                .select("created_at")
+                .in("website_id", [WEBSITE_ID, "all"])
+                .eq("published", true)
+                .order("created_at", { ascending: false })
+                .limit(1);
+
+            if (result.error || !result.data || !result.data.length) {
+                link.classList.remove("srg-has-new");
+                return;
+            }
+
+            const newest = result.data[0].created_at;
+            let seen = "";
+
+            try { seen = localStorage.getItem(seenKey) || ""; } catch (e) { }
+
+            const isNew = !seen || new Date(newest) > new Date(seen);
+
+            link.classList.toggle("srg-has-new", isNew);
+
+        } catch (error) {
+            /* Never let the badge break the app. */
+            console.warn("What's New badge:", error);
+        }
+    }
+
+    refresh();
+
+    const toggle = document.getElementById("srgMenuToggle");
+
+    if (toggle) {
+        toggle.addEventListener("click", refresh);
+    }
 }
