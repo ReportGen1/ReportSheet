@@ -280,6 +280,10 @@ function reportSettingsForFingerprint() {
     /* Nor must the website marking flag or the wording of the grade remarks. */
     delete copy.markingFromWebsite;
     delete copy.gradeRemarks;
+    /* Adding an assessment must not make existing reports count as new; the
+       extra scores themselves are part of the student data, so a report whose
+       extra marks change is still treated as a new version. */
+    delete copy.extraAssessments;
     return copy;
 }
 
@@ -1015,12 +1019,167 @@ let reportSettings = {
         {},
 
     nextTermResumption:
-        ""
+        "",
+
+    /* Extra assessments added by the school besides 1st CA, 2nd CA and
+       Exams: [{ name: "3rd CA", max: 10 }]. Empty = the classic three. */
+    extraAssessments:
+        []
 
 };
 
 
 const TEMPLATE_STUDENT_ROWS = 300;
+
+/* =========================================================
+   EXTRA ASSESSMENTS (beyond 1st CA / 2nd CA / Exams)
+
+   A school may add more assessments in School Information. Each
+   subject then gets one more column in the templates and on the
+   report, and the extra marks are added into the subject total.
+   Scores are saved in subject_scores.extras (jsonb, see
+   extra_assessments.sql) as { "3rd CA": 8 }.
+   ========================================================= */
+
+const MAX_EXTRA_ASSESSMENTS = 4;
+const RESERVED_ASSESSMENT_NAMES = ["1st ca", "2nd ca", "exams", "total", "average", "position", "adm no", "student name", "match key", "gender", "class", "term", "session", "house"];
+
+function getExtraAssessments(settings) {
+
+    const source = settings || reportSettings;
+    const list = source && Array.isArray(source.extraAssessments) ? source.extraAssessments : [];
+    const seen = [];
+    const result = [];
+
+    list.forEach(function (item) {
+
+        const name = String((item && item.name) || "").replace(/\s+/g, " ").trim();
+        const max = Number(item && item.max);
+        const key = name.toLowerCase();
+
+        if (!name || !isFinite(max) || max <= 0) return;
+        if (RESERVED_ASSESSMENT_NAMES.indexOf(key) !== -1 || seen.indexOf(key) !== -1) return;
+        if (result.length >= MAX_EXTRA_ASSESSMENTS) return;
+
+        seen.push(key);
+        result.push({ name: name, max: max });
+
+    });
+
+    return result;
+
+}
+
+/* Total of every assessment maximum (1st CA + 2nd CA + Exams + extras). */
+function getTotalMaximumMarks(settings) {
+
+    const s = settings || reportSettings;
+
+    return (Number(s.firstCAMaximum) || 20) +
+        (Number(s.secondCAMaximum) || 20) +
+        (Number(s.examsMaximum) || 60) +
+        getExtraAssessments(s).reduce(function (sum, item) { return sum + item.max; }, 0);
+
+}
+
+/* Raw cell values of a student's subject: [1st CA, 2nd CA, Exams, ...extras]. */
+function studentSubjectParts(student, subject) {
+
+    const parts = [
+        student[subject + " 1st CA"],
+        student[subject + " 2nd CA"],
+        student[subject + " Exams"]
+    ];
+
+    getExtraAssessments().forEach(function (item) {
+        parts.push(student[subject + " " + item.name]);
+    });
+
+    return parts;
+
+}
+
+function studentOffersSubject(student, subject) {
+    return studentSubjectParts(student, subject).some(function (value) {
+        return String(value ?? "").trim() !== "";
+    });
+}
+
+function studentSubjectSum(student, subject) {
+    return studentSubjectParts(student, subject).reduce(function (sum, value) {
+        return sum + (Number(value) || 0);
+    }, 0);
+}
+
+let subjectScoresExtrasMissing = false;
+
+function isMissingExtrasColumn(error) {
+
+    if (!error) return false;
+
+    const text = String(error.message || "");
+
+    return error.code === "42703" ||
+        error.code === "PGRST204" ||
+        (/extras/i.test(text) && /(column|schema cache)/i.test(text));
+
+}
+
+/* Runs a subject_scores select that also asks for the extras column, and
+   quietly falls back to the old columns if the database has no such column. */
+async function runSubjectScoreSelect(columns, build) {
+
+    if (!subjectScoresExtrasMissing) {
+
+        const result = await build(columns + ", extras");
+
+        if (!(result.error && isMissingExtrasColumn(result.error))) return result;
+
+        subjectScoresExtrasMissing = true;
+
+    }
+
+    return build(columns);
+
+}
+
+function cleanExtrasObject(value) {
+
+    const clean = {};
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) return clean;
+
+    Object.keys(value).forEach(function (key) {
+        const text = String(value[key] === null || value[key] === undefined ? "" : value[key]).trim();
+        if (text !== "" && isFinite(Number(text))) clean[key] = Number(text);
+    });
+
+    return clean;
+
+}
+
+/* Column letters of the extra assessments on a subject sheet. They sit after
+   Match Key (F) and Total (G), starting in column H. */
+function subjectSheetExtraLetters() {
+    return getExtraAssessments().map(function (item, index) {
+        return XLSX.utils.encode_col(7 + index);
+    });
+}
+
+/* Formula of the visible Total column (G) of a subject sheet row. */
+function subjectSheetTotalFormula(row) {
+
+    const letters = subjectSheetExtraLetters();
+
+    if (letters.length === 0) {
+        return `IF(COUNT(C${row}:E${row})=0,"",SUM(C${row}:E${row}))`;
+    }
+
+    const range = "C" + row + ":E" + row + "," + letters[0] + row + ":" + letters[letters.length - 1] + row;
+
+    return `IF(COUNT(${range})=0,"",SUM(${range}))`;
+
+}
 
 /* Untouched copy of the default report settings. */
 const DEFAULT_REPORT_SETTINGS = JSON.parse(JSON.stringify(reportSettings));
@@ -5533,6 +5692,11 @@ function buildSampleStudentForPreview() {
         sample[name + " 1st CA"] = Math.round(firstCAMax * (0.65 + (i % 4) * 0.08));
         sample[name + " 2nd CA"] = Math.round(secondCAMax * (0.6 + (i % 3) * 0.1));
         sample[name + " Exams"] = Math.round(examsMax * (0.55 + (i % 5) * 0.07));
+
+        getExtraAssessments().forEach(function (item, extraIndex) {
+            sample[name + " " + item.name] =
+                Math.round(item.max * (0.6 + ((i + extraIndex) % 4) * 0.08));
+        });
     });
 
     const behavior = {
@@ -9801,7 +9965,8 @@ function mergeRosterWithSavedScores(roster, savedRows) {
             student_name: student.student_name,
             first_ca: saved ? saved.first_ca : null,
             second_ca: saved ? saved.second_ca : null,
-            exams: saved ? saved.exams : null
+            exams: saved ? saved.exams : null,
+            extras: saved ? cleanExtrasObject(saved.extras) : {}
         };
 
     });
@@ -10495,9 +10660,7 @@ function getCommentBank() {
 function studentHasAnyScore(student) {
 
     return schoolSubjects.some(function (subject) {
-        return ["1st CA", "2nd CA", "Exams"].some(function (part) {
-            return String(student[subject + " " + part] ?? "").trim() !== "";
-        });
+        return studentOffersSubject(student, subject);
     });
 
 }
@@ -10790,13 +10953,18 @@ function resetCumulativeView() {
 
 async function buildCumulativeModel(context) {
 
-    const { data, error } = await supabaseClient
-        .from(SUBJECT_SCORES_TABLE)
-        .select("subject, term, admission_no, student_name, first_ca, second_ca, exams")
-        .eq("user_id", currentUserId)
-        .eq("website_id", WEBSITE_ID)
-        .eq("class_name", context.className)
-        .eq("session", context.session);
+    const { data, error } = await runSubjectScoreSelect(
+        "subject, term, admission_no, student_name, first_ca, second_ca, exams",
+        function (columns) {
+            return supabaseClient
+                .from(SUBJECT_SCORES_TABLE)
+                .select(columns)
+                .eq("user_id", currentUserId)
+                .eq("website_id", WEBSITE_ID)
+                .eq("class_name", context.className)
+                .eq("session", context.session);
+        }
+    );
 
     if (error) throw new Error(error.message || "Could not load the saved scores.");
 
@@ -10854,7 +11022,10 @@ async function buildCumulativeModel(context) {
 
     orderedRows.forEach(function (row) {
 
-        const parts = [row.first_ca, row.second_ca, row.exams].filter(function (v) {
+        const rowExtras = cleanExtrasObject(row.extras);
+        const parts = [row.first_ca, row.second_ca, row.exams].concat(
+            getExtraAssessments().map(function (item) { return rowExtras[item.name]; })
+        ).filter(function (v) {
             return v !== null && v !== undefined && v !== "";
         });
 
@@ -12260,6 +12431,15 @@ async function saveSubjectScoresToDatabase(className, subject, rows, session, te
         throw new Error("You must be signed in to upload a subject template.");
     }
 
+    const extraList = getExtraAssessments();
+
+    if (extraList.length > 0 && subjectScoresExtrasMissing) {
+        throw new Error(
+            "The database cannot store the extra assessments yet. Run extra_assessments.sql in Supabase, " +
+            "refresh this page and try again."
+        );
+    }
+
     const payloadRows = rows
         .map(function (row) {
 
@@ -12268,7 +12448,7 @@ async function saveSubjectScoresToDatabase(className, subject, rows, session, te
 
             if (!admissionNo && !studentName) return null;
 
-            return {
+            const record = {
                 user_id: currentUserId,
                 website_id: WEBSITE_ID,
                 class_name: className,
@@ -12283,6 +12463,20 @@ async function saveSubjectScoresToDatabase(className, subject, rows, session, te
                 exams: row["Exams"] === "" ? null : Number(row["Exams"]),
                 updated_at: new Date().toISOString()
             };
+
+            /* Extra assessments are only sent when the school uses them, so
+               nothing changes for schools that do not. */
+            if (extraList.length > 0) {
+                const extras = {};
+                extraList.forEach(function (item) {
+                    const raw = row[item.name];
+                    const text = String(raw === null || raw === undefined ? "" : raw).trim();
+                    if (text !== "" && isFinite(Number(text))) extras[item.name] = Number(text);
+                });
+                record.extras = extras;
+            }
+
+            return record;
 
         })
         .filter(function (row) { return row !== null; });
@@ -12299,6 +12493,13 @@ async function saveSubjectScoresToDatabase(className, subject, rows, session, te
 
     if (error) {
         console.error("Subject score upload error:", error);
+        if (extraList.length > 0 && isMissingExtrasColumn(error)) {
+            subjectScoresExtrasMissing = true;
+            throw new Error(
+                "The database cannot store the extra assessments yet. Run extra_assessments.sql in Supabase, " +
+                "refresh this page and try again."
+            );
+        }
         throw new Error(error.message || "Could not save subject scores.");
     }
 
@@ -12318,14 +12519,19 @@ async function fetchAllSavedSubjectScoresForClass(className, subjects, session, 
 
     if (!currentUserId || !className) return result;
 
-    const { data, error } = await supabaseClient
-        .from(SUBJECT_SCORES_TABLE)
-        .select("subject, admission_no, student_name, first_ca, second_ca, exams")
-        .eq("user_id", currentUserId)
-        .eq("website_id", WEBSITE_ID)
-        .eq("class_name", className)
-        .eq("session", session || "")
-        .eq("term", term || "");
+    const { data, error } = await runSubjectScoreSelect(
+        "subject, admission_no, student_name, first_ca, second_ca, exams",
+        function (columns) {
+            return supabaseClient
+                .from(SUBJECT_SCORES_TABLE)
+                .select(columns)
+                .eq("user_id", currentUserId)
+                .eq("website_id", WEBSITE_ID)
+                .eq("class_name", className)
+                .eq("session", session || "")
+                .eq("term", term || "");
+        }
+    );
 
     if (error) {
         console.error("Fetch saved subject scores error:", error);
@@ -12392,8 +12598,11 @@ async function downloadSubjectTemplate() {
 
         const workbook = XLSX.utils.book_new();
 
+        const extraList = getExtraAssessments();
+
         const subjectData = [
             ["Adm No", "Student Name", "1st CA", "2nd CA", "Exams", "Match Key", "Total"]
+                .concat(extraList.map(function (item) { return item.name; }))
         ];
 
         const rowCount = Math.max(TEMPLATE_STUDENT_ROWS, savedRows.length);
@@ -12401,8 +12610,10 @@ async function downloadSubjectTemplate() {
         for (let i = 0; i < rowCount; i++) {
 
             const saved = savedRows[i];
+            const blankExtras = extraList.map(function () { return ""; });
 
             if (saved) {
+                const savedExtras = cleanExtrasObject(saved.extras);
                 subjectData.push([
                     saved.admission_no || "",
                     saved.student_name || "",
@@ -12411,11 +12622,13 @@ async function downloadSubjectTemplate() {
                     saved.exams ?? "",
                     "",
                     ""
-                ]);
+                ].concat(extraList.map(function (item) {
+                    return savedExtras[item.name] ?? "";
+                })));
             } else if (i === 0 && savedRows.length === 0) {
-                subjectData.push(["001", "Example Student", "", "", "", "", ""]);
+                subjectData.push(["001", "Example Student", "", "", "", "", ""].concat(blankExtras));
             } else {
-                subjectData.push(["", "", "", "", "", "", ""]);
+                subjectData.push(["", "", "", "", "", "", ""].concat(blankExtras));
             }
 
         }
@@ -12435,20 +12648,23 @@ async function downloadSubjectTemplate() {
         for (let row = 2; row <= rowCount + 1; row++) {
             subjectSheet["G" + row] = {
                 t: "n",
-                f: `IF(COUNT(C${row}:E${row})=0,"",SUM(C${row}:E${row}))`
+                f: subjectSheetTotalFormula(row)
             };
         }
         /* Level of the class this sheet belongs to (header only, so the
-           upload still reads the student rows exactly as before). */
+           upload still reads the student rows exactly as before). It sits
+           after the extra assessment columns. */
         const subjectSheetLevel = getClassLevel(className);
+        const levelColumn = 7 + extraList.length;
 
         subjectSheet["!ref"] = XLSX.utils.encode_range({
             s: { r: 0, c: 0 },
-            e: { r: rowCount, c: subjectSheetLevel ? 7 : 6 }
+            e: { r: rowCount, c: subjectSheetLevel ? levelColumn : levelColumn - 1 }
         });
 
         if (subjectSheetLevel) {
-            subjectSheet["H1"] = { t: "s", v: "Level: " + subjectSheetLevel };
+            subjectSheet[XLSX.utils.encode_cell({ r: 0, c: levelColumn })] =
+                { t: "s", v: "Level: " + subjectSheetLevel };
         }
 
         subjectSheet["!cols"] = [
@@ -12460,6 +12676,10 @@ async function downloadSubjectTemplate() {
             { wch: 10, hidden: true },
             { wch: 8 }
         ];
+
+        extraList.forEach(function (item) {
+            subjectSheet["!cols"].push({ wch: Math.max(6, Math.min(14, item.name.length + 2)) });
+        });
 
         if (subjectSheetLevel) {
             subjectSheet["!cols"].push({ wch: 18 });
@@ -12655,7 +12875,8 @@ function onlineScoreLimits() {
     return {
         first: Number(reportSettings.firstCAMaximum) || 20,
         second: Number(reportSettings.secondCAMaximum) || 20,
-        exams: Number(reportSettings.examsMaximum) || 60
+        exams: Number(reportSettings.examsMaximum) || 60,
+        extras: getExtraAssessments()
     };
 }
 
@@ -12737,6 +12958,11 @@ function onlineScoreRowHtml(row, index, limits, nameLocked) {
         '" value="' + val(row.second_ca) + '"></td>' +
         '<td style="' + cell + '"><input ' + num + ' data-field="exams" max="' + limits.exams +
         '" value="' + val(row.exams) + '"></td>' +
+        (limits.extras || []).map(function (item, extraIndex) {
+            return '<td style="' + cell + '"><input ' + num + ' data-field="extra' + extraIndex +
+                '" max="' + item.max + '" value="' +
+                val(row.extras ? row.extras[item.name] : "") + '"></td>';
+        }).join("") +
         '<td style="' + cell + 'font-weight:bold;text-align:center;" data-total="' + index + '"></td>' +
         "</tr>"
     );
@@ -12756,6 +12982,11 @@ function refreshOnlineScoreTotal(index) {
     };
 
     const parts = [read("first"), read("second"), read("exams")];
+
+    getExtraAssessments().forEach(function (item, extraIndex) {
+        parts.push(read("extra" + extraIndex));
+    });
+
     const filled = parts.filter(function (p) { return p !== ""; });
 
     const totalCell = tbody.querySelector('[data-total="' + index + '"]');
@@ -12806,7 +13037,9 @@ async function openOnlineScoreEntry() {
             '<div style="font-weight:bold;">✏️ ' + escapeHTML(subject) + " scores</div>" +
             '<div style="font-size:13px;opacity:.8;">' + escapeHTML(contextLabel(context)) + "</div>" +
             '<div style="font-size:12px;opacity:.7;margin-top:2px;">Maximum marks: 1st CA ' + limits.first +
-            ", 2nd CA " + limits.second + ", Exams " + limits.exams + "</div>" +
+            ", 2nd CA " + limits.second + ", Exams " + limits.exams +
+            limits.extras.map(function (item) { return ", " + escapeHTML(item.name) + " " + item.max; }).join("") +
+            "</div>" +
             "</div>" +
             '<div id="onlineScoreScroll" style="flex:1;overflow:auto;padding:6px 8px;">' +
             '<div id="onlineScoreLoading">⏳ Loading students and saved scores…</div>' +
@@ -12841,10 +13074,12 @@ async function openOnlineScoreEntry() {
                 first_ca: row.first_ca,
                 second_ca: row.second_ca,
                 exams: row.exams,
+                extras: cleanExtrasObject(row.extras),
                 hadSaved:
                     row.first_ca !== null && row.first_ca !== undefined ||
                     row.second_ca !== null && row.second_ca !== undefined ||
-                    row.exams !== null && row.exams !== undefined,
+                    row.exams !== null && row.exams !== undefined ||
+                    Object.keys(cleanExtrasObject(row.extras)).length > 0,
                 locked: roster.length > 0
             };
         });
@@ -12925,6 +13160,10 @@ function renderOnlineScoreTable(showNoListNote) {
         '<th style="' + head + '">1st CA<br><small>/' + state.limits.first + "</small></th>" +
         '<th style="' + head + '">2nd CA<br><small>/' + state.limits.second + "</small></th>" +
         '<th style="' + head + '">Exams<br><small>/' + state.limits.exams + "</small></th>" +
+        state.limits.extras.map(function (item) {
+            return '<th style="' + head + '">' + escapeHTML(item.name) +
+                "<br><small>/" + item.max + "</small></th>";
+        }).join("") +
         '<th style="' + head + '">Total</th>' +
         '</tr></thead><tbody id="onlineScoreBody">';
 
@@ -12950,9 +13189,11 @@ function renderOnlineScoreTable(showNoListNote) {
         const index = Number(input.getAttribute("data-row"));
         const field = input.getAttribute("data-field");
 
-        if (field === "first" || field === "second" || field === "exams") {
+        if (field === "first" || field === "second" || field === "exams" || /^extra\d+$/.test(field || "")) {
 
-            const max = state.limits[field];
+            const max = /^extra\d+$/.test(field)
+                ? (state.limits.extras[Number(field.slice(5))] || { max: Infinity }).max
+                : state.limits[field];
             const value = input.value.trim();
             const bad = value !== "" && (isNaN(Number(value)) || Number(value) < 0 || Number(value) > max);
 
@@ -13016,6 +13257,12 @@ function collectOnlineScoreInputs() {
         row.second_ca = read("second");
         row.exams = read("exams");
 
+        row.extras = row.extras || {};
+        state.limits.extras.forEach(function (item, extraIndex) {
+            const text = read("extra" + extraIndex);
+            if (text !== null) row.extras[item.name] = text;
+        });
+
     });
 
 }
@@ -13070,21 +13317,52 @@ async function saveOnlineScores() {
 
             }
 
-            const hasAny = values.first !== "" || values.second !== "" || values.exams !== "";
+            const extraValues = {};
+            let extraFailed = false;
+
+            state.limits.extras.forEach(function (item) {
+
+                if (extraFailed) return;
+
+                const v = toNumber(row.extras ? row.extras[item.name] : "");
+                extraValues[item.name] = v;
+
+                if (v === "") return;
+
+                if (isNaN(v) || v < 0) {
+                    setOnlineScoreMessage("❌ " + label + ": " + item.name + " must be a number, 0 or more.", true);
+                    extraFailed = true;
+                } else if (v > item.max) {
+                    setOnlineScoreMessage("❌ " + label + ": " + item.name + " cannot be more than " + item.max + ".", true);
+                    extraFailed = true;
+                }
+
+            });
+
+            if (extraFailed) return;
+
+            const hasAny = values.first !== "" || values.second !== "" || values.exams !== "" ||
+                Object.keys(extraValues).some(function (key) { return extraValues[key] !== ""; });
             const hasIdentity = String(row.admission_no || "").trim() || String(row.student_name || "").trim();
 
             /* Save a student who has a score now, or who had saved scores
                that are being cleared. Untouched empty rows are skipped. */
             if (!hasIdentity || (!hasAny && !row.hadSaved)) continue;
 
-            payload.push({
+            const payloadRow = {
                 "Adm No": String(row.admission_no || "").trim(),
                 "Student Name": row.student_name,
                 "1st CA": values.first,
                 "2nd CA": values.second,
                 "Exams": values.exams,
                 _row: row
+            };
+
+            Object.keys(extraValues).forEach(function (key) {
+                payloadRow[key] = extraValues[key];
             });
+
+            payload.push(payloadRow);
 
         }
 
@@ -13106,7 +13384,8 @@ async function saveOnlineScores() {
 
         payload.forEach(function (item) {
             item._row.hadSaved =
-                item["1st CA"] !== "" || item["2nd CA"] !== "" || item["Exams"] !== "";
+                item["1st CA"] !== "" || item["2nd CA"] !== "" || item["Exams"] !== "" ||
+                state.limits.extras.some(function (extra) { return item[extra.name] !== "" && item[extra.name] !== undefined; });
         });
 
         state.dirty = false;
@@ -13755,7 +14034,13 @@ function initializeMarkingSettingsBlock() {
         '<label style="font-size:12px;">Exams' +
         '<input id="markExams" ' + input + "></label>" +
         "</div>" +
-        '<div id="markTotalNote" style="font-size:12px;margin:4px 0 10px;"></div>' +
+        '<div style="font-size:13px;margin:10px 0 4px;">Extra assessments (optional, up to ' + MAX_EXTRA_ASSESSMENTS + ")</div>" +
+        '<div style="font-size:12px;opacity:.75;margin-bottom:4px;">' +
+        "Add another assessment such as 3rd CA or Project. It appears in the templates and on every report, " +
+        "and its marks are added to each subject total.</div>" +
+        '<div id="markExtraList"></div>' +
+        '<button type="button" id="markExtraAdd" style="margin-top:4px;">+ Add assessment</button>' +
+        '<div id="markTotalNote" style="font-size:12px;margin:6px 0 10px;"></div>' +
 
         '<div style="font-size:13px;margin-bottom:4px;">Grading key (marks out of the total)</div>' +
         '<table style="border-collapse:collapse;width:100%;font-size:14px;">' +
@@ -13776,7 +14061,76 @@ function initializeMarkingSettingsBlock() {
 
     block.addEventListener("input", updateMarkingPreview);
 
+    block.addEventListener("click", function (event) {
+
+        const target = event.target;
+        if (!target || !target.id && !target.getAttribute) return;
+
+        if (target.id === "markExtraAdd") {
+
+            const current = readMarkingExtraRows();
+
+            if (current.length >= MAX_EXTRA_ASSESSMENTS) {
+                showMarkingMessage("You can add up to " + MAX_EXTRA_ASSESSMENTS + " extra assessments.", true);
+                return;
+            }
+
+            current.push({ name: "", max: "" });
+            renderMarkingExtraRows(current);
+            updateMarkingPreview();
+
+        } else if (target.getAttribute("data-extra-remove") !== null) {
+
+            const current = readMarkingExtraRows();
+            current.splice(Number(target.getAttribute("data-extra-remove")), 1);
+            renderMarkingExtraRows(current);
+            updateMarkingPreview();
+
+        }
+
+    });
+
     fillMarkingSettingsForm();
+
+}
+
+/* Draws the editable list of extra assessments: [{ name, max }]. */
+function renderMarkingExtraRows(list) {
+
+    const box = markingEl("markExtraList");
+    if (!box) return;
+
+    const field = "padding:6px;box-sizing:border-box;";
+
+    box.innerHTML = list.map(function (item, index) {
+        return '<div style="display:flex;gap:6px;margin-bottom:4px;align-items:center;">' +
+            '<input type="text" class="markExtraName" maxlength="20" autocomplete="off" placeholder="Name e.g. 3rd CA" ' +
+            'value="' + escapeHTML(item.name === undefined || item.name === null ? "" : item.name) +
+            '" style="flex:1;min-width:0;' + field + '">' +
+            '<input type="number" class="markExtraMax" inputmode="decimal" min="0" step="any" placeholder="Max" ' +
+            'value="' + escapeHTML(item.max === undefined || item.max === null ? "" : item.max) +
+            '" style="width:70px;' + field + '">' +
+            '<button type="button" data-extra-remove="' + index + '" title="Remove">✕</button>' +
+            "</div>";
+    }).join("");
+
+}
+
+/* Reads the typed extra assessments, including unfinished rows. */
+function readMarkingExtraRows() {
+
+    const names = document.querySelectorAll("#markExtraList .markExtraName");
+    const maxes = document.querySelectorAll("#markExtraList .markExtraMax");
+    const rows = [];
+
+    for (let i = 0; i < names.length; i++) {
+        rows.push({
+            name: names[i].value.replace(/\s+/g, " ").trim(),
+            max: maxes[i] ? maxes[i].value.trim() : ""
+        });
+    }
+
+    return rows;
 
 }
 
@@ -13806,6 +14160,8 @@ function fillMarkingSettingsForm() {
     set("markFirstCA", markingNumberOr(s.firstCAMaximum, 20) || 20);
     set("markSecondCA", markingNumberOr(s.secondCAMaximum, 20) || 20);
     set("markExams", markingNumberOr(s.examsMaximum, 60) || 60);
+
+    renderMarkingExtraRows(getExtraAssessments());
 
     set("markGradeA", markingNumberOr(s.gradeA, 70));
     set("markGradeB", markingNumberOr(s.gradeB, 60));
@@ -13847,7 +14203,8 @@ function readMarkingForm() {
         gradeD: num("markGradeD"),
         gradeE: num("markGradeE"),
         gradeF: 0,
-        gradeRemarks: remarks
+        gradeRemarks: remarks,
+        extraAssessments: readMarkingExtraRows()
     };
 
 }
@@ -13867,7 +14224,40 @@ function validateMarkingDraft(d) {
         }
     }
 
-    const total = d.firstCAMaximum + d.secondCAMaximum + d.examsMaximum;
+    const seenExtraNames = [];
+
+    for (const item of d.extraAssessments || []) {
+
+        const max = item.max === "" ? NaN : Number(item.max);
+
+        if (item.name === "" && item.max === "") {
+            return "Fill in or remove the empty extra assessment row.";
+        }
+
+        if (item.name === "") return "Every extra assessment needs a name.";
+
+        const key = item.name.toLowerCase();
+
+        if (RESERVED_ASSESSMENT_NAMES.indexOf(key) !== -1) {
+            return "\"" + item.name + "\" cannot be used as an assessment name. Choose another name.";
+        }
+
+        if (seenExtraNames.indexOf(key) !== -1) {
+            return "Two assessments are named \"" + item.name + "\". Each name must be different.";
+        }
+
+        seenExtraNames.push(key);
+
+        if (/[|]/.test(item.name)) return "Assessment names cannot contain the | character.";
+
+        if (!isFinite(max) || max <= 0) {
+            return item.name + " needs a maximum mark above 0.";
+        }
+
+    }
+
+    const total = d.firstCAMaximum + d.secondCAMaximum + d.examsMaximum +
+        getExtraAssessments(d).reduce(function (sum, item) { return sum + item.max; }, 0);
     const letters = ["A", "B", "C", "D", "E"];
 
     for (const letter of letters) {
@@ -13904,7 +14294,8 @@ function updateMarkingPreview() {
     const error = validateMarkingDraft(d);
 
     const totalNote = markingEl("markTotalNote");
-    const total = d.firstCAMaximum + d.secondCAMaximum + d.examsMaximum;
+    const total = d.firstCAMaximum + d.secondCAMaximum + d.examsMaximum +
+        getExtraAssessments(d).reduce(function (sum, item) { return sum + item.max; }, 0);
 
     if (totalNote) {
         totalNote.textContent = isFinite(total)
@@ -13980,6 +14371,8 @@ function applyMarkingSettingsFromForm() {
 
     reportSettings.gradeF = 0;
 
+    reportSettings.extraAssessments = getExtraAssessments(d);
+
     /* Only wording that differs from the built-in key is stored. */
     const custom = {};
     let hasCustom = false;
@@ -14021,11 +14414,15 @@ function readSettings(settingsSheet) {
         keep[key] = reportSettings[key];
     });
 
+    const keepExtras = getExtraAssessments();
+
     const result = readSettingsFromSheet(settingsSheet);
 
     Object.keys(keep).forEach(function (key) {
         reportSettings[key] = keep[key];
     });
+
+    reportSettings.extraAssessments = keepExtras;
 
     return result;
 
@@ -14058,6 +14455,11 @@ async function downloadExcelTemplate() {
         if (!templateContext) return;
 
         const activeClassName = templateContext.className;
+
+        /* Extra assessments the school added (e.g. 3rd CA). Each subject
+           block on the Scores sheet is 1st CA, 2nd CA, Exams, extras..., Total. */
+        const extraList = getExtraAssessments();
+        const blockWidth = 4 + extraList.length;
 
 
         const templateLevel =
@@ -14162,6 +14564,10 @@ async function downloadExcelTemplate() {
                     " Exams"
                 );
 
+                extraList.forEach(function (item) {
+                    scoresHeaders.push(subject + " " + item.name);
+                });
+
                 scoresHeaders.push(
                     subject +
                     " Total"
@@ -14255,6 +14661,8 @@ async function downloadExcelTemplate() {
 
                     row.push("");
 
+                    extraList.forEach(function () { row.push(""); });
+
                     row.push("");
 
                 }
@@ -14315,6 +14723,10 @@ async function downloadExcelTemplate() {
                     { wch: 10 }
 
                 );
+
+                extraList.forEach(function () {
+                    scoresSheet["!cols"].push({ wch: 10 });
+                });
 
             }
         );
@@ -14394,6 +14806,29 @@ async function downloadExcelTemplate() {
             [
                 "Exams Maximum",
                 reportSettings.examsMaximum
+            ],
+
+            [
+                "Extra Assessment 1",
+                (extraList[0] ? extraList[0].name + "|" + extraList[0].max : "")
+            ],
+
+
+            [
+                "Extra Assessment 2",
+                (extraList[1] ? extraList[1].name + "|" + extraList[1].max : "")
+            ],
+
+
+            [
+                "Extra Assessment 3",
+                (extraList[2] ? extraList[2].name + "|" + extraList[2].max : "")
+            ],
+
+
+            [
+                "Extra Assessment 4",
+                (extraList[3] ? extraList[3].name + "|" + extraList[3].max : "")
             ],
 
             [
@@ -14503,7 +14938,7 @@ async function downloadExcelTemplate() {
                         "Exams",
                         "Match Key",
                         "Total"
-                    ]
+                    ].concat(extraList.map(function (item) { return item.name; }))
 
                 ];
 
@@ -14537,7 +14972,9 @@ async function downloadExcelTemplate() {
                             saved.exams ?? "",
                             "",
                     ""
-                        ]);
+                        ].concat(extraList.map(function (item) {
+                            return cleanExtrasObject(saved.extras)[item.name] ?? "";
+                        })));
 
                     } else {
 
@@ -14557,7 +14994,7 @@ async function downloadExcelTemplate() {
                             "",
                         ""
 
-                        ]);
+                        ].concat(extraList.map(function () { return ""; })));
 
                     }
 
@@ -14609,6 +15046,10 @@ async function downloadExcelTemplate() {
 
                 ];
 
+                extraList.forEach(function (item) {
+                    subjectSheet["!cols"].push({ wch: Math.max(6, Math.min(14, item.name.length + 2)) });
+                });
+
 
                 subjectSheet["!freeze"] = {
 
@@ -14623,12 +15064,12 @@ async function downloadExcelTemplate() {
         for (let row = 2; row <= TEMPLATE_STUDENT_ROWS + 1; row++) {
             subjectSheet["G" + row] = {
                 t: "n",
-                f: `IF(COUNT(C${row}:E${row})=0,"",SUM(C${row}:E${row}))`
+                f: subjectSheetTotalFormula(row)
             };
         }
         subjectSheet["!ref"] = XLSX.utils.encode_range({
             s: { r: 0, c: 0 },
-            e: { r: TEMPLATE_STUDENT_ROWS, c: 6 }
+            e: { r: TEMPLATE_STUDENT_ROWS, c: 6 + extraList.length }
         });
 
 
@@ -14670,7 +15111,7 @@ async function downloadExcelTemplate() {
                     8 +
                     (
                         subjectIndex *
-                        4
+                        blockWidth
                     );
 
 
@@ -14686,7 +15127,7 @@ async function downloadExcelTemplate() {
 
                 const totalColumn =
                     firstCAColumn +
-                    3;
+                    3 + extraList.length;
 
 
                 const firstCALetter =
@@ -14768,6 +15209,25 @@ async function downloadExcelTemplate() {
                        2nd CA and Exams for this row. Blank (not "0")
                        when the subject isn't offered, i.e. all three
                        component cells are blank. */
+                    extraList.forEach(function (item, extraIndex) {
+
+                        const extraLetter =
+                            XLSX.utils.encode_col(firstCAColumn + 2 + extraIndex);
+
+                        const sourceLetter =
+                            XLSX.utils.encode_col(7 + extraIndex);
+
+                        scoresSheet[extraLetter + row] = {
+                            t: "n",
+                            f:
+                                `IF($B${row}="","",IFERROR(IF(INDEX('${safeSheetName}'!$${sourceLetter}:$${sourceLetter},MATCH(TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0))="","",INDEX('${safeSheetName}'!$${sourceLetter}:$${sourceLetter},MATCH(TRIM($A${row})&"|"&TRIM(CLEAN(SUBSTITUTE($B${row},CHAR(160)," "))),'${safeSheetName}'!$F:$F,0))),""))`
+                        };
+
+                    });
+
+                    const lastPartLetter =
+                        XLSX.utils.encode_col(totalColumn - 2);
+
                     scoresSheet[
                         totalLetter +
                         row
@@ -14776,7 +15236,7 @@ async function downloadExcelTemplate() {
                         t: "n",
 
                         f:
-                            `IF(AND(${firstCALetter}${row}="",${secondCALetter}${row}="",${examsLetter}${row}=""),"",SUM(${firstCALetter}${row}:${examsLetter}${row}))`
+                            `IF(COUNT(${firstCALetter}${row}:${lastPartLetter}${row})=0,"",SUM(${firstCALetter}${row}:${lastPartLetter}${row}))`
 
                     };
 
@@ -14798,7 +15258,7 @@ async function downloadExcelTemplate() {
             firstSubjectColumn +
             (
                 templateSubjects.length *
-                4
+                blockWidth
             ) -
             1;
 
@@ -15465,6 +15925,9 @@ function readSettingsFromSheet(
         );
 
 
+    /* Extra assessments listed in the uploaded Settings sheet. */
+    const uploadedExtraAssessments = [];
+
     rows.forEach(
         function (row) {
 
@@ -15477,6 +15940,19 @@ function readSettingsFromSheet(
 
             const value =
                 row[1];
+
+
+            if (/^Extra Assessment \d+$/i.test(setting)) {
+
+                const parts = String(value === null || value === undefined ? "" : value).split("|");
+                const extraName = String(parts[0] || "").trim();
+                const extraMax = Number(parts[1]);
+
+                if (extraName && extraMax > 0) {
+                    uploadedExtraAssessments.push({ name: extraName, max: extraMax });
+                }
+
+            }
 
 
             if (
@@ -15693,6 +16169,13 @@ function readSettingsFromSheet(
     );
 
 
+    if (uploadedExtraAssessments.length > 0) {
+
+        reportSettings.extraAssessments = uploadedExtraAssessments;
+        reportSettings.extraAssessments = getExtraAssessments();
+
+    }
+
     renderSubjectList();
 
     saveAppData();
@@ -15782,6 +16265,9 @@ function attachSubjectScores(scoreRows, workbook, subjects) {
             student[subject + " 1st CA"] = "";
             student[subject + " 2nd CA"] = "";
             student[subject + " Exams"] = "";
+            getExtraAssessments().forEach(function (item) {
+                student[subject + " " + item.name] = "";
+            });
         });
     });
 
@@ -15828,6 +16314,9 @@ function attachSubjectScores(scoreRows, workbook, subjects) {
             student[subject + " 1st CA"] = subjectRow["1st CA"] ?? "";
             student[subject + " 2nd CA"] = subjectRow["2nd CA"] ?? "";
             student[subject + " Exams"] = subjectRow["Exams"] ?? "";
+            getExtraAssessments().forEach(function (item) {
+                student[subject + " " + item.name] = subjectRow[item.name] ?? "";
+            });
         });
     });
 }
@@ -16979,16 +17468,30 @@ function buildPublishExtra(student, subjects, overallTotal, average, behavior) {
         photo = getStudentPhoto(student) || "";
     } catch (e) { photo = ""; }
 
+    /* Each subject's extra-assessment marks, keyed by subject name. Sent in
+       p_extra as well as on the subject rows, so the online result checker
+       can show the extra columns even if the server only keeps the basic
+       subject fields. */
+    const subjectExtras = {};
+    (subjects || []).forEach(function (subject) {
+        if (subject && subject.subject_name && subject.extras &&
+            Object.keys(subject.extras).length > 0) {
+            subjectExtras[subject.subject_name] = subject.extras;
+        }
+    });
+
     return {
         house: student["House"] || "",
         student_photo: photo,
+        subject_extras: subjectExtras,
         overall_total: Number(overallTotal.toFixed(2)),
         overall_grade: getGrade(average),
         marks: {
             ca1_max: firstCAMax,
             ca2_max: secondCAMax,
             exam_max: examsMax,
-            total_max: firstCAMax + secondCAMax + examsMax
+            extras: getExtraAssessments(),
+            total_max: getTotalMaximumMarks()
         },
         grade_key: getGradeKeyRows(),
         behaviour: domains,
@@ -17037,14 +17540,20 @@ function getPublishResultData(student) {
         const examsKey =
             subjectName + " Exams";
 
-        const hasSubject =
-            isFilledIn(student[firstCAKey]) ||
-            isFilledIn(student[secondCAKey]) ||
-            isFilledIn(student[examsKey]);
+        const hasSubject = studentOffersSubject(student, subjectName);
 
         if (!hasSubject) {
             return;
         }
+
+        const extraMarks = {};
+        let extrasTotal = 0;
+
+        getExtraAssessments().forEach(function (item) {
+            const mark = Number(student[subjectName + " " + item.name]) || 0;
+            extraMarks[item.name] = mark;
+            extrasTotal += mark;
+        });
 
         const firstCA =
             Number(student[firstCAKey]) || 0;
@@ -17056,7 +17565,7 @@ function getPublishResultData(student) {
             Number(student[examsKey]) || 0;
 
         const total =
-            firstCA + secondCA + exams;
+            firstCA + secondCA + exams + extrasTotal;
 
         /* Same class statistics the printed report uses. */
         const subjectStats =
@@ -17069,6 +17578,7 @@ function getPublishResultData(student) {
             ca1: firstCA,
             ca2: secondCA,
             exam: exams,
+            extras: extraMarks,
             total: total,
             grade: subjectGrade,
             remark: getGradeRemark(subjectGrade),
@@ -17318,6 +17828,7 @@ async function publishOneStudentResult(student) {
                     ca1: subject.ca1 ?? "",
                     ca2: subject.ca2 ?? "",
                     exam: subject.exam ?? "",
+                    extras: subject.extras || {},
                     total: subject.total ?? "",
                     grade: subject.grade || "",
                     remark: subject.remark || "",
@@ -18172,11 +18683,7 @@ function updateTemporaryGenerationMessage(generated, total) {
    or null when the student does not offer the subject. */
 function getStudentSubjectTotal(student, subjectName) {
 
-    const parts = [
-        student[subjectName + " 1st CA"],
-        student[subjectName + " 2nd CA"],
-        student[subjectName + " Exams"]
-    ];
+    const parts = studentSubjectParts(student, subjectName);
 
     const offered = parts.some(function (value) {
         return String(value ?? "").trim() !== "";
@@ -18262,12 +18769,13 @@ function createReport(student) {
         const firstCA = Number(student[firstCAKey]) || 0;
         const secondCA = Number(student[secondCAKey]) || 0;
         const exams = Number(student[examsKey]) || 0;
-        const total = firstCA + secondCA + exams;
+        const extraValues = getExtraAssessments().map(function (item) {
+            return Number(student[subjectName + " " + item.name]) || 0;
+        });
+        const total = firstCA + secondCA + exams +
+            extraValues.reduce(function (sum, value) { return sum + value; }, 0);
 
-        const hasSubject =
-            String(student[firstCAKey] ?? "").trim() !== "" ||
-            String(student[secondCAKey] ?? "").trim() !== "" ||
-            String(student[examsKey] ?? "").trim() !== "";
+        const hasSubject = studentOffersSubject(student, subjectName);
 
         if (hasSubject) {
             subjects.push({
@@ -18275,6 +18783,7 @@ function createReport(student) {
                 firstCA: firstCA,
                 secondCA: secondCA,
                 exams: exams,
+                extras: extraValues,
                 total: total
             });
 
@@ -18338,6 +18847,7 @@ function createReport(student) {
                 <td>${formatScore(subject.firstCA)}</td>
                 <td>${formatScore(subject.secondCA)}</td>
                 <td>${formatScore(subject.exams)}</td>
+                ${subject.extras.map(function (value) { return "<td>" + formatScore(value) + "</td>"; }).join("")}
                 <td class="total-cell">${formatScore(subject.total)}</td>
                 <td class="subject-average-cell">${subjectStats.average === null ? "—" : formatScore(subjectStats.average)}</td>
                 <td class="subject-position-cell">${subjectStats.position === null ? "—" : formatPosition(subjectStats.position)}</td>
@@ -18391,7 +18901,28 @@ function createReport(student) {
     const firstCAMax = Number(reportSettings.firstCAMaximum) || 20;
     const secondCAMax = Number(reportSettings.secondCAMaximum) || 20;
     const examsMax = Number(reportSettings.examsMaximum) || 60;
-    const totalMaximum = firstCAMax + secondCAMax + examsMax;
+    const extraAssessmentList = getExtraAssessments();
+    const extraCount = extraAssessmentList.length;
+    const totalMaximum = getTotalMaximumMarks();
+
+    /* Column widths always add up to 100%, so adding assessments shrinks the
+       subject column a little instead of pushing any column off the page.
+       With no extra assessments the widths are exactly the original ones. */
+    const numberWidth = [8, 7.5, 7, 6.5, 6][extraCount];
+    const remarkWidth = [14, 13, 13, 12, 12][extraCount];
+    const serialWidth = extraCount === 0 ? 4 : 3.5;
+    const subjectWidth = Math.round(
+        (100 - serialWidth - remarkWidth - numberWidth * (7 + extraCount)) * 10
+    ) / 10;
+    const numberCol = '<col style="width:' + numberWidth + '%;">';
+    const reportColgroup =
+        '<col style="width:' + serialWidth + '%;">' +
+        '<col style="width:' + subjectWidth + '%;">' +
+        new Array(7 + extraCount + 1).join(numberCol) +
+        '<col style="width:' + remarkWidth + '%;">';
+    const extraHeaderCells = extraAssessmentList.map(function (item) {
+        return "<th>" + escapeHTML(item.name) + "<br><small>" + item.max + " mks</small></th>";
+    }).join("");
 
     const studentName = student["Student Name"] || "";
     const admissionNo = student["Admission No"] || "";
@@ -18526,16 +19057,7 @@ function createReport(student) {
 
                 <table class="result-table" style="width:100%;max-width:100%;table-layout:fixed;">
                     <colgroup>
-                        <col style="width:4%;">
-                        <col style="width:26%;">
-                        <col style="width:8%;">
-                        <col style="width:8%;">
-                        <col style="width:8%;">
-                        <col style="width:8%;">
-                        <col style="width:8%;">
-                        <col style="width:8%;">
-                        <col style="width:8%;">
-                        <col style="width:14%;">
+                        ${reportColgroup}
                     </colgroup>
                     <thead>
                         <tr>
@@ -18544,6 +19066,7 @@ function createReport(student) {
                             <th>1st CA<br><small>${firstCAMax} mks</small></th>
                             <th>2nd CA<br><small>${secondCAMax} mks</small></th>
                             <th>Exams<br><small>${examsMax} mks</small></th>
+                            ${extraHeaderCells}
                             <th>Total<br><small>${totalMaximum} mks</small></th>
                             <th>Subject<br>Avg</th>
                             <th>Subject<br>Pos.</th>
@@ -18558,7 +19081,7 @@ function createReport(student) {
 
                     <tfoot>
                         <tr>
-                            <th colspan="5">OVERALL TOTAL</th>
+                            <th colspan="${5 + extraCount}">OVERALL TOTAL</th>
                             <th colspan="5">${overallTotal.toFixed(2)}</th>
                         </tr>
                     </tfoot>
@@ -18759,10 +19282,7 @@ function getGradeKeyRows(settingsOverride) {
 
     const s = settingsOverride || reportSettings;
 
-    const totalMax =
-        (Number(s.firstCAMaximum) || 20) +
-        (Number(s.secondCAMaximum) || 20) +
-        (Number(s.examsMaximum) || 60);
+    const totalMax = getTotalMaximumMarks(s);
 
     const minimums = {
         A: Number(s.gradeA),
@@ -18845,20 +19365,14 @@ function getStudentSubjectTotals(student) {
         const secondCAKey = subject + " 2nd CA";
         const examsKey = subject + " Exams";
 
-        const hasSubject =
-            String(student[firstCAKey] ?? "").trim() !== "" ||
-            String(student[secondCAKey] ?? "").trim() !== "" ||
-            String(student[examsKey] ?? "").trim() !== "";
+        const hasSubject = studentOffersSubject(student, subject);
 
         if (!hasSubject) {
             subjectTotals[subject] = null;
             return;
         }
 
-        const firstCA = Number(student[firstCAKey]) || 0;
-        const secondCA = Number(student[secondCAKey]) || 0;
-        const exams = Number(student[examsKey]) || 0;
-        const total = firstCA + secondCA + exams;
+        const total = studentSubjectSum(student, subject);
 
         subjectTotals[subject] = total;
         overallTotal += total;
@@ -18934,14 +19448,7 @@ function createMasterSheetHTML() {
         /* Only show subject columns actually offered by someone in this class. */
         const classSubjects = schoolSubjects.filter(function (subject) {
             return classStudents.some(function (student) {
-                const firstCAKey = subject + " 1st CA";
-                const secondCAKey = subject + " 2nd CA";
-                const examsKey = subject + " Exams";
-                return (
-                    String(student[firstCAKey] ?? "").trim() !== "" ||
-                    String(student[secondCAKey] ?? "").trim() !== "" ||
-                    String(student[examsKey] ?? "").trim() !== ""
-                );
+                return studentOffersSubject(student, subject);
             });
         });
 
@@ -19091,64 +19598,11 @@ function calculateStudentAverage(
     schoolSubjects.forEach(
         function (subject) {
 
-            const firstCA =
-                Number(
-                    student[
-                        subject +
-                        " 1st CA"
-                    ]
-                ) || 0;
-
-
-            const secondCA =
-                Number(
-                    student[
-                        subject +
-                        " 2nd CA"
-                    ]
-                ) || 0;
-
-
-            const exams =
-                Number(
-                    student[
-                        subject +
-                        " Exams"
-                    ]
-                ) || 0;
-
-
-            const hasSubject =
-
-                String(
-                    student[
-                        subject +
-                        " 1st CA"
-                    ] ?? ""
-                ).trim() !== "" ||
-
-                String(
-                    student[
-                        subject +
-                        " 2nd CA"
-                    ] ?? ""
-                ).trim() !== "" ||
-
-                String(
-                    student[
-                        subject +
-                        " Exams"
-                    ] ?? ""
-                ).trim() !== "";
-
+            const hasSubject = studentOffersSubject(student, subject);
 
             if (hasSubject) {
 
-                total +=
-
-                    firstCA +
-                    secondCA +
-                    exams;
+                total += studentSubjectSum(student, subject);
 
 
                 subjectCount++;
@@ -19829,12 +20283,30 @@ function fitReportsToSinglePage(layer, fillPage) {
             report.style.setProperty("height", pageHeightMm + "mm", "important");
             wrapReportAsSvgPage(report, pageWidthMm, pageHeightMm);
         } else if (naturalHeightPx > maxInnerHeightPx && naturalHeightPx > 0) {
-            const scale = maxInnerHeightPx / naturalHeightPx;
+            /* Too tall (for example after an extra assessment column is added
+               and the table wraps onto more lines). The old one-shot scale
+               (page height / natural height) over-shrank the report: widening
+               the content to keep the full page width makes the text re-wrap
+               shorter, so the printed report ended well above the bottom of
+               the page. Search for the LARGEST scale whose printed height
+               still fits, so the report fills the page exactly as before.
+               It only ever shrinks (never above 1), like the old behaviour. */
             inner.style.transformOrigin = "top left";
-            inner.style.transform = "scale(" + scale + ")";
-            /* Widen before scaling so the shrink is vertical-only visually,
-               keeping the report's full page width after the transform. */
-            inner.style.width = (100 / scale) + "%";
+
+            function fittedHeightAt(candidate) {
+                inner.style.width = (100 / candidate) + "%";
+                inner.style.transform = "scale(" + candidate + ")";
+                return inner.scrollHeight * candidate;
+            }
+
+            let low = 0.05;                 // always fits
+            let high = 1;                   // natural size does not fit (checked above)
+            for (let pass = 0; pass < 16; pass++) {
+                const middle = (low + high) / 2;
+                if (fittedHeightAt(middle) <= maxInnerHeightPx) low = middle; else high = middle;
+            }
+
+            fittedHeightAt(low);
             report.style.setProperty("height", pageHeightMm + "mm", "important");
         } else {
             report.style.setProperty("height", "auto", "important");
